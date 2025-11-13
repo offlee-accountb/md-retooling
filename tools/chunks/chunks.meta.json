@@ -1,0 +1,6 @@
+{
+  "document": "docs/hwpx_spec.md",
+  "chunks": "tools/chunks/sections.jsonl",
+  "count": 340,
+  "source": "md"
+}

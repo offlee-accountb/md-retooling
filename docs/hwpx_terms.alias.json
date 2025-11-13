@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "generated_at": "2025-11-12T15:04:33.136206+00:00",
+  "document": "hwpx_spec.md",
+  "aliases": [
+    {
+      "terms": [
+        "문단",
+        "paragraph",
+        "p",
+        "p 요소"
+      ],
+      "anchor": "hp-p"
+    },
+    {
+      "terms": [
+        "문단 모양",
+        "paragraph properties",
+        "para properties",
+        "paraPr"
+      ],
+      "anchor": "hp-paraPr"
+    },
+    {
+      "terms": [
+        "정렬",
+        "alignment",
+        "align"
+      ],
+      "anchor": "hp-align"
+    },
+    {
+      "terms": [
+        "머리번호",
+        "heading",
+        "heading element"
+      ],
+      "anchor": "hp-heading"
+    },
+    {
+      "terms": [
+        "줄 간격",
+        "lineSpacing",
+        "line spacing"
+      ],
+      "anchor": "hp-lineSpacing"
+    },
+    {
+      "terms": [
+        "여백",
+        "margin",
+        "para margin"
+      ],
+      "anchor": "hp-margin"
+    },
+    {
+      "terms": [
+        "테두리",
+        "border",
+        "paragraph border"
+      ],
+      "anchor": "hp-border"
+    },
+    {
+      "terms": [
+        "자동 간격",
+        "autoSpacing",
+        "auto spacing"
+      ],
+      "anchor": "hp-autoSpacing"
+    },
+    {
+      "terms": [
+        "런",
+        "run",
+        "텍스트 런",
+        "text run"
+      ],
+      "anchor": "hp-run"
+    },
+    {
+      "terms": [
+        "글자 속성",
+        "charPr",
+        "character properties"
+      ],
+      "anchor": "hp-charPr"
+    },
+    {
+      "terms": [
+        "구역",
+        "section",
+        "secPr",
+        "섹션"
+      ],
+      "anchor": "hp-secPr"
+    },
+    {
+      "terms": [
+        "쪽",
+        "page",
+        "용지",
+        "pagePr"
+      ],
+      "anchor": "hp-pagePr"
+    },
+    {
+      "terms": [
+        "바탕쪽",
+        "마스터페이지",
+        "master page",
+        "masterPage"
+      ],
+      "anchor": "hp-masterPage"
+    },
+    {
+      "terms": [
+        "책갈피",
+        "bookmark"
+      ],
+      "anchor": "hp-bookmark"
+    },
+    {
+      "terms": [
+        "하이퍼링크 제외",
+        "doNotApplyHyperlink",
+        "hyperlink exclude"
+      ],
+      "anchor": "hp-doNotApplyHyperlink"
+    },
+    {
+      "terms": [
+        "탭 목록",
+        "tabProperties",
+        "tabs"
+      ],
+      "anchor": "hp-tabProperties"
+    },
+    {
+      "terms": [
+        "탭 정의",
+        "tabPr",
+        "tab"
+      ],
+      "anchor": "hp-tabPr"
+    },
+    {
+      "terms": [
+        "문단 번호",
+        "numberings",
+        "개요 번호"
+      ],
+      "anchor": "hp-numberings"
+    },
+    {
+      "terms": [
+        "머리 설정",
+        "paraHead",
+        "문단 머리"
+      ],
+      "anchor": "hp-paraHead"
+    },
+    {
+      "terms": [
+        "글머리표",
+        "bullets",
+        "bullet list"
+      ],
+      "anchor": "hp-bullets"
+    },
+    {
+      "terms": [
+        "표",
+        "table",
+        "tbl"
+      ],
+      "anchor": "hp-tbl"
+    },
+    {
+      "terms": [
+        "버전",
+        "version.xml",
+        "HCFVersion"
+      ],
+      "anchor": "hv-HCFVersion"
+    }
+  ]
+}

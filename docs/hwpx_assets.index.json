@@ -1,0 +1,1255 @@
+{
+  "document": "docs/hwpx_spec.md",
+  "generated_at": "2025-11-12T15:26:20.409315+00:00",
+  "counts": {
+    "tables": 88,
+    "figures": 10,
+    "samples": 2,
+    "examples": 38,
+    "total": 138
+  },
+  "items": [
+    {
+      "type": "example",
+      "number": 4,
+      "anchor": "example-4",
+      "line": 964,
+      "label_line": 965,
+      "title": "— metadata의 예",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "example",
+      "number": 5,
+      "anchor": "example-5",
+      "line": 1015,
+      "label_line": 1016,
+      "title": "— beginNum 예",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "example",
+      "number": 71,
+      "anchor": "example-71",
+      "line": 3599,
+      "label_line": 3600,
+      "title": "fieldBegin 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 72,
+      "anchor": "example-72",
+      "line": 3623,
+      "label_line": 3624,
+      "title": "CLICK_HERE 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 73,
+      "anchor": "example-73",
+      "line": 3680,
+      "label_line": 3681,
+      "title": "HYPERLINK 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 74,
+      "anchor": "example-74",
+      "line": 3698,
+      "label_line": 3699,
+      "title": "BOOKMARK 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 75,
+      "anchor": "example-75",
+      "line": 3777,
+      "label_line": 3778,
+      "title": "FORMULA 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 76,
+      "anchor": "example-76",
+      "line": 3843,
+      "label_line": 3844,
+      "title": "DOC_DATE 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 77,
+      "anchor": "example-77",
+      "line": 3883,
+      "label_line": 3884,
+      "title": "SUMMARY 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 78,
+      "anchor": "example-78",
+      "line": 3930,
+      "label_line": 3931,
+      "title": "USER_INFO 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 79,
+      "anchor": "example-79",
+      "line": 3953,
+      "label_line": 3954,
+      "title": "PATH 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 80,
+      "anchor": "example-80",
+      "line": 4009,
+      "label_line": 4010,
+      "title": "CROSSREF 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 81,
+      "anchor": "example-81",
+      "line": 4069,
+      "label_line": 4070,
+      "title": "MAILMERGE 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 82,
+      "anchor": "example-82",
+      "line": 4095,
+      "label_line": 4096,
+      "title": "MEMO 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 83,
+      "anchor": "example-83",
+      "line": 4168,
+      "label_line": 4169,
+      "title": "PROOFREADING_MARKS 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 85,
+      "anchor": "example-85",
+      "line": 4202,
+      "label_line": 4203,
+      "title": "METADATA 예```xml",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 86,
+      "anchor": "example-86",
+      "line": 4232,
+      "label_line": 4233,
+      "title": "CITATION 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 94,
+      "anchor": "example-94",
+      "line": 4396,
+      "label_line": 4397,
+      "title": "pageHiding 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 95,
+      "anchor": "example-95",
+      "line": 4411,
+      "label_line": 4412,
+      "title": "pageNum 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 96,
+      "anchor": "example-96",
+      "line": 4425,
+      "label_line": 4426,
+      "title": "indexmark 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 97,
+      "anchor": "example-97",
+      "line": 4443,
+      "label_line": 4444,
+      "title": "hiddenComment 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 98,
+      "anchor": "example-98",
+      "line": 4489,
+      "label_line": 4490,
+      "title": "markpenBegin 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 99,
+      "anchor": "example-99",
+      "line": 4512,
+      "label_line": 4513,
+      "title": "tab 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 100,
+      "anchor": "example-100",
+      "line": 4527,
+      "label_line": 4528,
+      "title": "TrackChangeTag 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 101,
+      "anchor": "example-101",
+      "line": 4571,
+      "label_line": 4572,
+      "title": "AbstractShapeObjectType 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 102,
+      "anchor": "example-102",
+      "line": 4597,
+      "label_line": 4598,
+      "title": "pos 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 103,
+      "anchor": "example-103",
+      "line": 4610,
+      "label_line": 4611,
+      "title": "outMargin 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 104,
+      "anchor": "example-104",
+      "line": 4632,
+      "label_line": 4633,
+      "title": "caption 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 105,
+      "anchor": "example-105",
+      "line": 4677,
+      "label_line": 4678,
+      "title": "tbl 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 106,
+      "anchor": "example-106",
+      "line": 4698,
+      "label_line": 4699,
+      "title": "inMargin 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 108,
+      "anchor": "example-108",
+      "line": 4745,
+      "label_line": 4746,
+      "title": "tc 예```xml",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 109,
+      "anchor": "example-109",
+      "line": 4767,
+      "label_line": 4768,
+      "title": "cellAddr 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 115,
+      "anchor": "example-115",
+      "line": 4861,
+      "label_line": 4862,
+      "title": "AbstractShapeComponentType 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 116,
+      "anchor": "example-116",
+      "line": 4889,
+      "label_line": 4890,
+      "title": "offset 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 117,
+      "anchor": "example-117",
+      "line": 4903,
+      "label_line": 4904,
+      "title": "orgSz 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 118,
+      "anchor": "example-118",
+      "line": 4917,
+      "label_line": 4918,
+      "title": "curSz 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 119,
+      "anchor": "example-119",
+      "line": 4931,
+      "label_line": 4932,
+      "title": "flip 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "example",
+      "number": 120,
+      "anchor": "example-120",
+      "line": 4947,
+      "label_line": 4948,
+      "title": "rotationinfo 예",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "figure",
+      "number": 2,
+      "anchor": "figure-2",
+      "line": 926,
+      "label_line": 927,
+      "title": "version.xml 파일의 XML 스키마",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 6,
+      "anchor": "figure-6",
+      "line": 1004,
+      "label_line": 1005,
+      "title": "<beginNum>의 구조",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 148,
+      "anchor": "figure-148",
+      "line": 3001,
+      "label_line": 3002,
+      "title": "<softEdge>의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 149,
+      "anchor": "figure-149",
+      "line": 3014,
+      "label_line": 3015,
+      "title": "<reflection>의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 150,
+      "anchor": "figure-150",
+      "line": 3044,
+      "label_line": 3045,
+      "title": "<alpha>의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 169,
+      "anchor": "figure-169",
+      "line": 3405,
+      "label_line": 3406,
+      "title": "<polygon>의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 173,
+      "anchor": "figure-173",
+      "line": 3491,
+      "label_line": 3492,
+      "title": "[ConnectPointType]의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 175,
+      "anchor": "figure-175",
+      "line": 3569,
+      "label_line": 3570,
+      "title": "<formCharPr>의 구조",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "figure",
+      "number": 211,
+      "anchor": "figure-211",
+      "line": 4976,
+      "label_line": 4977,
+      "title": "ds:SignatureMethod의 구조",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "figure",
+      "number": 212,
+      "anchor": "figure-212",
+      "line": 5045,
+      "label_line": 5046,
+      "title": "<switch>의 구조",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "sample",
+      "number": 180,
+      "anchor": "sample-180",
+      "line": 4996,
+      "label_line": 4997,
+      "title": "SignatureMethod 예",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "sample",
+      "number": 181,
+      "anchor": "sample-181",
+      "line": 5064,
+      "label_line": 5065,
+      "title": "switch 예",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "table",
+      "number": 1,
+      "anchor": "table-1",
+      "line": 791,
+      "label_line": 792,
+      "title": "MIME 미디어 유형",
+      "source_file": "okok1-1-1.md"
+    },
+    {
+      "type": "table",
+      "number": 2,
+      "anchor": "table-2",
+      "line": 837,
+      "label_line": 838,
+      "title": "HWPValue 형식",
+      "source_file": "okok1-1-1.md"
+    },
+    {
+      "type": "table",
+      "number": 9,
+      "anchor": "table-9",
+      "line": 864,
+      "label_line": 865,
+      "title": "색상 형식",
+      "source_file": "okok1-1-1.md"
+    },
+    {
+      "type": "table",
+      "number": 10,
+      "anchor": "table-10",
+      "line": 952,
+      "label_line": 953,
+      "title": "metadata 형식",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "table",
+      "number": 11,
+      "anchor": "table-11",
+      "line": 987,
+      "label_line": 988,
+      "title": "head version",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "table",
+      "number": 12,
+      "anchor": "table-12",
+      "line": 991,
+      "label_line": 992,
+      "title": "head 속성",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "table",
+      "number": 13,
+      "anchor": "table-13",
+      "line": 1006,
+      "label_line": 1007,
+      "title": "beginNum 속성",
+      "source_file": "okok1-1-2.md"
+    },
+    {
+      "type": "table",
+      "number": 132,
+      "anchor": "table-132",
+      "line": 3593,
+      "label_line": 3594,
+      "title": "fieldBegin 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 133,
+      "anchor": "table-133",
+      "line": 3617,
+      "label_line": 3618,
+      "title": "CLICK_HERE 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 134,
+      "anchor": "table-134",
+      "line": 3640,
+      "label_line": 3641,
+      "title": "HYPERLINK 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 135,
+      "anchor": "table-135",
+      "line": 3649,
+      "label_line": 3650,
+      "title": "하이퍼링크 종류",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 136,
+      "anchor": "table-136",
+      "line": 3659,
+      "label_line": 3660,
+      "title": "대상의 종류",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 137,
+      "anchor": "table-137",
+      "line": 3672,
+      "label_line": 3673,
+      "title": "문서창 옵션",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 138,
+      "anchor": "table-138",
+      "line": 3707,
+      "label_line": 3708,
+      "title": "FORMULA 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 139,
+      "anchor": "table-139",
+      "line": 3716,
+      "label_line": 3717,
+      "title": "FORMULA 함수 목록",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 140,
+      "anchor": "table-140",
+      "line": 3746,
+      "label_line": 3747,
+      "title": "FORMULA 함수 인자",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 141,
+      "anchor": "table-141",
+      "line": 3757,
+      "label_line": 3758,
+      "title": "셀 번호",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 142,
+      "anchor": "table-142",
+      "line": 3766,
+      "label_line": 3767,
+      "title": "결과 출력 형식",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 143,
+      "anchor": "table-143",
+      "line": 3796,
+      "label_line": 3797,
+      "title": "DATE 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 144,
+      "anchor": "table-144",
+      "line": 3804,
+      "label_line": 3805,
+      "title": "국가 코드",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 145,
+      "anchor": "table-145",
+      "line": 3815,
+      "label_line": 3816,
+      "title": "날짜/시간 표시 기호",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 147,
+      "anchor": "table-147",
+      "line": 3859,
+      "label_line": 3860,
+      "title": "SUMMARY 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 148,
+      "anchor": "table-148",
+      "line": 3865,
+      "label_line": 3866,
+      "title": "문서 요약 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 149,
+      "anchor": "table-149",
+      "line": 3898,
+      "label_line": 3899,
+      "title": "USER_INFO 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 150,
+      "anchor": "table-150",
+      "line": 3904,
+      "label_line": 3905,
+      "title": "사용자 정보 항목",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 151,
+      "anchor": "table-151",
+      "line": 3945,
+      "label_line": 3946,
+      "title": "PATH 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 153,
+      "anchor": "table-153",
+      "line": 3968,
+      "label_line": 3969,
+      "title": "CROSSREF 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 154,
+      "anchor": "table-154",
+      "line": 3981,
+      "label_line": 3982,
+      "title": "참조 경로 형식",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 155,
+      "anchor": "table-155",
+      "line": 3988,
+      "label_line": 3989,
+      "title": "참조 대상 종류",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 156,
+      "anchor": "table-156",
+      "line": 4000,
+      "label_line": 4001,
+      "title": "참조 내용",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 157,
+      "anchor": "table-157",
+      "line": 4028,
+      "label_line": 4029,
+      "title": "MAILMERGE 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 158,
+      "anchor": "table-158",
+      "line": 4037,
+      "label_line": 4038,
+      "title": "필드 엔트리 이름",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 159,
+      "anchor": "table-159",
+      "line": 4085,
+      "label_line": 4086,
+      "title": "MEMO 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 160,
+      "anchor": "table-160",
+      "line": 4124,
+      "label_line": 4125,
+      "title": "PROOFREADING_MARKS 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 161,
+      "anchor": "table-161",
+      "line": 4134,
+      "label_line": 4135,
+      "title": "교정 부호 종류",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 162,
+      "anchor": "table-162",
+      "line": 4161,
+      "label_line": 4162,
+      "title": "SplitType 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 163,
+      "anchor": "table-163",
+      "line": 4184,
+      "label_line": 4185,
+      "title": "PRIVATEINFO 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 164,
+      "anchor": "table-164",
+      "line": 4196,
+      "label_line": 4197,
+      "title": "암호화 방식",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 166,
+      "anchor": "table-166",
+      "line": 4223,
+      "label_line": 4224,
+      "title": "CITATION 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 176,
+      "anchor": "table-176",
+      "line": 4378,
+      "label_line": 4379,
+      "title": "pageNumCtrl 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 177,
+      "anchor": "table-177",
+      "line": 4386,
+      "label_line": 4387,
+      "title": "pageHiding 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 178,
+      "anchor": "table-178",
+      "line": 4404,
+      "label_line": 4405,
+      "title": "pageNum 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 179,
+      "anchor": "table-179",
+      "line": 4419,
+      "label_line": 4420,
+      "title": "indexmark 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 180,
+      "anchor": "table-180",
+      "line": 4438,
+      "label_line": 4439,
+      "title": "hiddenComment 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 182,
+      "anchor": "table-182",
+      "line": 4464,
+      "label_line": 4465,
+      "title": "t 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 183,
+      "anchor": "table-183",
+      "line": 4484,
+      "label_line": 4485,
+      "title": "markpenBegin 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 184,
+      "anchor": "table-184",
+      "line": 4498,
+      "label_line": 4499,
+      "title": "titleMark 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 185,
+      "anchor": "table-185",
+      "line": 4505,
+      "label_line": 4506,
+      "title": "tab 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 186,
+      "anchor": "table-186",
+      "line": 4520,
+      "label_line": 4521,
+      "title": "TrackChangeTag 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 187,
+      "anchor": "table-187",
+      "line": 4550,
+      "label_line": 4551,
+      "title": "AbstractShapeObjectType 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 188,
+      "anchor": "table-188",
+      "line": 4561,
+      "label_line": 4562,
+      "title": "AbstractShapeObjectType 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 190,
+      "anchor": "table-190",
+      "line": 4582,
+      "label_line": 4583,
+      "title": "pos 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 191,
+      "anchor": "table-191",
+      "line": 4605,
+      "label_line": 4606,
+      "title": "outMargin 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 192,
+      "anchor": "table-192",
+      "line": 4618,
+      "label_line": 4619,
+      "title": "caption 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 193,
+      "anchor": "table-193",
+      "line": 4627,
+      "label_line": 4628,
+      "title": "caption 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 195,
+      "anchor": "table-195",
+      "line": 4669,
+      "label_line": 4670,
+      "title": "tbl 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 196,
+      "anchor": "table-196",
+      "line": 4693,
+      "label_line": 4694,
+      "title": "inMargin 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 197,
+      "anchor": "table-197",
+      "line": 4708,
+      "label_line": 4709,
+      "title": "cellzoneList 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 198,
+      "anchor": "table-198",
+      "line": 4716,
+      "label_line": 4717,
+      "title": "cellzone 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 201,
+      "anchor": "table-201",
+      "line": 4730,
+      "label_line": 4731,
+      "title": "tc 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 202,
+      "anchor": "table-202",
+      "line": 4760,
+      "label_line": 4761,
+      "title": "cellAddr 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 209,
+      "anchor": "table-209",
+      "line": 4844,
+      "label_line": 4845,
+      "title": "AbstractShapeComponentType 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 210,
+      "anchor": "table-210",
+      "line": 4851,
+      "label_line": 4852,
+      "title": "AbstractShapeComponentType 하위 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 211,
+      "anchor": "table-211",
+      "line": 4883,
+      "label_line": 4884,
+      "title": "offset 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 212,
+      "anchor": "table-212",
+      "line": 4897,
+      "label_line": 4898,
+      "title": "orgSz 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 213,
+      "anchor": "table-213",
+      "line": 4911,
+      "label_line": 4912,
+      "title": "curSz 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 214,
+      "anchor": "table-214",
+      "line": 4925,
+      "label_line": 4926,
+      "title": "flip 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 215,
+      "anchor": "table-215",
+      "line": 4939,
+      "label_line": 4940,
+      "title": "rotationInfo 요소",
+      "source_file": "okok1-2-3.md"
+    },
+    {
+      "type": "table",
+      "number": 236,
+      "anchor": "table-236",
+      "line": 3003,
+      "label_line": 3004,
+      "title": "softEdge 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 237,
+      "anchor": "table-237",
+      "line": 3016,
+      "label_line": 3017,
+      "title": "reflection 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 238,
+      "anchor": "table-238",
+      "line": 3025,
+      "label_line": 3026,
+      "title": "reflection 하위 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 239,
+      "anchor": "table-239",
+      "line": 3046,
+      "label_line": 3047,
+      "title": "alpha 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 267,
+      "anchor": "table-267",
+      "line": 3407,
+      "label_line": 3408,
+      "title": "polygon 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 268,
+      "anchor": "table-268",
+      "line": 3429,
+      "label_line": 3430,
+      "title": "curve 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 269,
+      "anchor": "table-269",
+      "line": 3448,
+      "label_line": 3449,
+      "title": "seg 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 270,
+      "anchor": "table-270",
+      "line": 3465,
+      "label_line": 3466,
+      "title": "connectLine 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 271,
+      "anchor": "table-271",
+      "line": 3469,
+      "label_line": 3470,
+      "title": "connectLine 하위 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 272,
+      "anchor": "table-272",
+      "line": 3493,
+      "label_line": 3494,
+      "title": "ConnectPointType 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 273,
+      "anchor": "table-273",
+      "line": 3508,
+      "label_line": 3509,
+      "title": "ConnectControlPointType 속성",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 274,
+      "anchor": "table-274",
+      "line": 3523,
+      "label_line": 3524,
+      "title": "type 값",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 275,
+      "anchor": "table-275",
+      "line": 3537,
+      "label_line": 3538,
+      "title": "AbstractFormObjectType 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 276,
+      "anchor": "table-276",
+      "line": 3551,
+      "label_line": 3552,
+      "title": "AbstractFormObjectType 하위 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 277,
+      "anchor": "table-277",
+      "line": 3571,
+      "label_line": 3572,
+      "title": "formCharPr 요소",
+      "source_file": "okok1-2-2.md"
+    },
+    {
+      "type": "table",
+      "number": 323,
+      "anchor": "table-323",
+      "line": 4967,
+      "label_line": 4968,
+      "title": "Signature 요소",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "table",
+      "number": 325,
+      "anchor": "table-325",
+      "line": 4978,
+      "label_line": 4979,
+      "title": "ds:SignatureMethod 요소",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "table",
+      "number": 326,
+      "anchor": "table-326",
+      "line": 4982,
+      "label_line": 4983,
+      "title": "ds:SignatureMethod 하위 요소",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "table",
+      "number": 327,
+      "anchor": "table-327",
+      "line": 5047,
+      "label_line": 5048,
+      "title": "switch 요소",
+      "source_file": "okok1-3.md"
+    },
+    {
+      "type": "table",
+      "number": 328,
+      "anchor": "table-328",
+      "line": 5055,
+      "label_line": 5056,
+      "title": "case 요소",
+      "source_file": "okok1-3.md"
+    }
+  ]
+}
