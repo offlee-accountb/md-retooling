@@ -41,6 +41,30 @@
 최신이 위로
 -->
 
+## [2025-11-15] 문제: 생성한 HWPX가 한글에서 열리지 않음
+
+### 증상
+- `md_to_hwpx.py`로 만든 문서를 한글에서 열면 “문서 변환코드를 선택하라”는 오류가 뜨고, 내용이 깨진 바이너리처럼 보임.
+
+### 원인
+- OCF/HWPX 패키지 구성요소가 빠져 있었음.
+  - `META-INF/manifest.xml`, `META-INF/container.rdf`, `contents/content.hpf`의 spine 등이 누락.
+  - `version.xml` 속성도 최소값만 들어 있어서 Hancom 뷰어가 패키지를 인정하지 못함.
+
+### 해결 방법
+1. `test_inputmodel.hwpx`, `test_minimal_manual.hwpx`를 비교 분석해 필수 파일/속성을 정리.
+2. `md_to_hwpx.py`에 다음 빌더를 추가/수정:
+   - `build_manifest_xml()`, `build_container_rdf()`, `build_container_xml()` (rootfile 2개 등록).
+   - `build_content_hpf()`에서 manifest/spine/metadata를 표준대로 생성.
+   - `build_version_xml()` 속성 보완.
+3. `write_hwpx()`에서 누락된 XML을 ZIP에 포함하고, `mimetype`를 `application/hwp+zip`으로 수정.
+4. 새로 생성한 `output/test_styled?.hwpx`를 한글에서 열어 정상 동작 확인.
+
+### 참고
+- 관련 이슈: `converter/CURRENT_ISSUES.md` (2025-11-15 이전 기록)
+- 스펙 링크: `docs/hwpx_spec.md`
+- 비교용 샘플: `converter/test_inputmodel.hwpx`
+
 ---
 
 <!-- 예시 (실제 문제 발생 시 이 예시 삭제)

@@ -89,18 +89,12 @@ STYLE_ID_MAP = {
 }
 
 # Spacer paragraph mapping: certain BlockType 앞에 여백용 문단 삽입
-SPACER_PARA_MAP = {
-    BlockType.SUBTITLE: "20",
-    BlockType.BODY: "21",
-    BlockType.DESC2: "22",
-    BlockType.DESC3: "23",
-}
-
 SPACER_CHAR_MAP = {
-    BlockType.SUBTITLE: "10",
-    BlockType.BODY: "11",
-    BlockType.DESC2: "12",
-    BlockType.DESC3: "13",
+    # 휴먼명조 계열 spacer (test_inputmodel 기반)
+    BlockType.SUBTITLE: "10",  # 10pt
+    BlockType.BODY: "11",      # 8pt
+    BlockType.DESC2: "12",     # 6pt
+    BlockType.DESC3: "13",     # 4pt
 }
 
 
@@ -239,9 +233,10 @@ def build_header_xml() -> bytes:
     ref_list = ET.SubElement(head, _q("hh", "refList"))
 
     # fontfaces: 7개 언어 전부 정의 (CRITICAL - Hangul requires all 7 languages)
-    # - id=0: 맑은 고딕
-    # - id=1: HY헤드라인M
-    # - id=2: 휴먼명조
+    # style_textbook에서 실제로 사용하는 글꼴만 정의:
+    # - id=0: HY헤드라인M
+    # - id=1: 휴먼명조
+    # - id=2: 맑은 고딕
     fontfaces = ET.SubElement(ref_list, _q("hh", "fontfaces"), {"itemCnt": "7"})
 
     def _add_font(ff_parent, font_id: int, face: str) -> None:
@@ -266,12 +261,11 @@ def build_header_xml() -> bytes:
             },
         )
 
-    # 공통 폰트 정의를 위한 헬퍼
     def add_fontface(lang: str) -> None:
         ff = ET.SubElement(fontfaces, _q("hh", "fontface"), {"lang": lang, "fontCnt": "3"})
-        _add_font(ff, 0, "맑은 고딕")
-        _add_font(ff, 1, "HY헤드라인M")
-        _add_font(ff, 2, "휴먼명조")
+        _add_font(ff, 0, "HY헤드라인M")
+        _add_font(ff, 1, "휴먼명조")
+        _add_font(ff, 2, "맑은 고딕")
 
     # 7개 언어 모두 추가
     for lang in ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]:
@@ -314,10 +308,10 @@ def build_header_xml() -> bytes:
     fillBrush = ET.SubElement(bf2, _q("hc", "fillBrush"))
     ET.SubElement(fillBrush, _q("hc", "winBrush"), {"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
 
-    # charProperties: 글자 모양 정의 (id 0 = 기본, 나머지는 BlockType/여백용/볼드용)
+    # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
 
-    def add_char_pr(char_id: int, height: int, hangul_font_id: int) -> None:
+    def add_char_pr(char_id: int, height: int, hangul_font_id: int, *, bold: bool = False) -> None:
         char = ET.SubElement(
             char_props,
             _q("hh", "charPr"),
@@ -409,25 +403,26 @@ def build_header_xml() -> bytes:
             _q("hh", "shadow"),
             {"type": "NONE", "color": "#B2B2B2", "offsetX": "10", "offsetY": "10"},
         )
+        if bold:
+            ET.SubElement(char, _q("hh", "bold"))
 
-    # 기본 바탕글 (맑은 고딕, 약 10pt)
-    add_char_pr(0, 1000, 0)
-    # TITLE / SUBTITLE / BODY / DESC2 / EMPHASIS (15pt)
-    add_char_pr(1, 1500, 1)  # TITLE: HY헤드라인M
-    add_char_pr(2, 1500, 1)  # SUBTITLE: HY헤드라인M
-    add_char_pr(3, 1500, 2)  # BODY: 휴먼명조
-    add_char_pr(4, 1500, 2)  # DESC2: 휴먼명조
-    add_char_pr(6, 1500, 2)  # EMPHASIS: 휴먼명조 (Bold는 후속 개선에서 반영)
-    # DESC3 (12pt, 맑은 고딕)
-    add_char_pr(5, 1200, 0)
-    # Spacer 줄 (10/8/6/4pt, 맑은 고딕)
-    add_char_pr(10, 1000, 0)
-    add_char_pr(11, 800, 0)
-    add_char_pr(12, 600, 0)
-    add_char_pr(13, 400, 0)
-    # 공통 Bold 글자모양 (폰트는 맑은 고딕, 높이는 15pt 수준)
-    add_char_pr(100, 1500, 0)
-    char_props.set("itemCnt", "11")
+    char_defs = [
+        (0, 1000, 2, False),   # 기본 (맑은 고딕 10pt)
+        (1, 1500, 0, False),   # 주제목 HY 15pt
+        (2, 1500, 0, False),   # 소제목 HY 15pt
+        (3, 1500, 1, False),   # 본문 휴먼 15pt
+        (4, 1500, 1, False),   # 설명2 휴먼 15pt
+        (5, 1000, 2, False),   # 설명3 맑은고딕 10pt (요구사항)
+        (6, 1500, 1, True),    # 강조 휴먼 15pt Bold
+        (10, 1000, 2, False),  # 소제목 spacer 맑은고딕 10pt
+        (11, 800, 2, False),   # 본문 spacer 맑은고딕 8pt
+        (12, 600, 2, False),   # 설명2 spacer 맑은고딕 6pt
+        (13, 400, 2, False),   # 설명3 spacer 맑은고딕 4pt
+        (100, 1500, 1, True),  # 인라인 Bold (휴먼 15pt)
+    ]
+    for cid, height, font_id, is_bold in char_defs:
+        add_char_pr(cid, height, font_id, bold=is_bold)
+    char_props.set("itemCnt", str(len(char_defs)))
 
     # tabProperties: 3개 (참조 파일 기준)
     tab_props = ET.SubElement(ref_list, _q("hh", "tabProperties"), {"itemCnt": "3"})
@@ -511,12 +506,7 @@ def build_header_xml() -> bytes:
     add_para_pr(5, "LEFT", 160)
     # 6: EMPHASIS (130%)
     add_para_pr(6, "CENTER", 130)
-    # Spacer paragraphs (줄간격 100%)
-    add_para_pr(20, "LEFT", 100)  # subtitle spacer
-    add_para_pr(21, "LEFT", 100)  # body spacer
-    add_para_pr(22, "LEFT", 100)  # desc2 spacer
-    add_para_pr(23, "LEFT", 100)  # desc3 spacer
-    para_props.set("itemCnt", "10")
+    para_props.set("itemCnt", "7")
 
     # numberings: 번호 매기기 정의 (참조 파일 기준)
     numberings = ET.SubElement(ref_list, _q("hh", "numberings"), {"itemCnt": "1"})
@@ -632,15 +622,14 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
 
     for block in text_blocks:
         # 1) 필요하면 spacer 문단 추가
-        spacer_para_id = SPACER_PARA_MAP.get(block.type)
         spacer_char_id = SPACER_CHAR_MAP.get(block.type)
-        if spacer_para_id is not None and spacer_char_id is not None:
+        if spacer_char_id is not None:
             p = ET.SubElement(
                 root,
                 _q("hp", "p"),
                 {
                     "id": str(p_id),
-                    "paraPrIDRef": spacer_para_id,
+                    "paraPrIDRef": "0",
                     "styleIDRef": "0",
                     "pageBreak": "0",
                     "columnBreak": "0",
