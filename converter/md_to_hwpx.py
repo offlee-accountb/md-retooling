@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 import argparse
 import re
 import zipfile
@@ -60,9 +60,9 @@ PARA_STYLE_MAP = {
     # NOTE: IDs must match paraPr definitions in header.xml
     BlockType.TITLE: "1",
     BlockType.SUBTITLE: "2",
-    BlockType.BODY: "3",
-    BlockType.DESC2: "4",
-    BlockType.DESC3: "5",
+    BlockType.BODY: "9",
+    BlockType.DESC2: "8",
+    BlockType.DESC3: "10",
     BlockType.EMPHASIS: "6",
     BlockType.PLAIN: "0",
 }
@@ -918,6 +918,8 @@ def build_header_xml() -> bytes:
         *,
         font_line_height: str = "0",
         snap_to_grid: str = "1",
+        margin: Optional[dict] = None,
+        border_fill_id: str = "1",
     ) -> None:
         para = ET.SubElement(
             para_props,
@@ -953,11 +955,13 @@ def build_header_xml() -> bytes:
         )
         ET.SubElement(para, _q("hh", "autoSpacing"), {"eAsianEng": "0", "eAsianNum": "0"})
         margin_el = ET.SubElement(para, _q("hh", "margin"))
-        ET.SubElement(margin_el, _q("hc", "intent"), {"value": "0", "unit": "HWPUNIT"})
-        ET.SubElement(margin_el, _q("hc", "left"), {"value": "0", "unit": "HWPUNIT"})
-        ET.SubElement(margin_el, _q("hc", "right"), {"value": "0", "unit": "HWPUNIT"})
-        ET.SubElement(margin_el, _q("hc", "prev"), {"value": "0", "unit": "HWPUNIT"})
-        ET.SubElement(margin_el, _q("hc", "next"), {"value": "0", "unit": "HWPUNIT"})
+        margin_values = {"intent": "0", "left": "0", "right": "0", "prev": "0", "next": "0"}
+        if margin:
+            for key, value in margin.items():
+                if key in margin_values:
+                    margin_values[key] = str(value)
+        for key, value in margin_values.items():
+            ET.SubElement(margin_el, _q("hc", key), {"value": value, "unit": "HWPUNIT"})
         ET.SubElement(
             para,
             _q("hh", "lineSpacing"),
@@ -967,7 +971,7 @@ def build_header_xml() -> bytes:
             para,
             _q("hh", "border"),
             {
-                "borderFillIDRef": "1",
+                "borderFillIDRef": border_fill_id,
                 "offsetLeft": "0",
                 "offsetRight": "0",
                 "offsetTop": "0",
@@ -987,9 +991,39 @@ def build_header_xml() -> bytes:
         (6, "CENTER", 130, {}),
         # 예비 paraPr 5종 (Option A 대비)
         (7, "LEFT", 150, {"font_line_height": "0", "snap_to_grid": "1"}),
-        (8, "LEFT", 140, {"font_line_height": "0", "snap_to_grid": "1"}),
-        (9, "JUSTIFY", 130, {"font_line_height": "0", "snap_to_grid": "0"}),
-        (10, "CENTER", 120, {"font_line_height": "0", "snap_to_grid": "1"}),
+        (
+            8,
+            "LEFT",
+            160,
+            {
+                "font_line_height": "0",
+                "snap_to_grid": "1",
+                # DESC2 hanging indent 37.5pt → 3750 HWP units.
+                "margin": {"intent": -3750},
+            },
+        ),
+        (
+            9,
+            "JUSTIFY",
+            160,
+            {
+                "font_line_height": "0",
+                "snap_to_grid": "0",
+                # Body paragraphs target 30pt indent (3000 HWP units).
+                "margin": {"intent": -3000},
+            },
+        ),
+        (
+            10,
+            "LEFT",
+            160,
+            {
+                "font_line_height": "0",
+                "snap_to_grid": "1",
+                # DESC3 indent tuned to 35pt (3500 HWP units) while staying left aligned.
+                "margin": {"intent": -3500},
+            },
+        ),
         (11, "LEFT", 135, {"font_line_height": "0", "snap_to_grid": "1"}),
     ]
     for pid, align, spacing, extra in para_defs:
@@ -999,6 +1033,8 @@ def build_header_xml() -> bytes:
             spacing,
             font_line_height=extra.get("font_line_height", "0"),
             snap_to_grid=extra.get("snap_to_grid", "1"),
+            margin=extra.get("margin"),
+            border_fill_id=extra.get("border_fill_id", "1"),
         )
     para_props.set("itemCnt", str(len(para_defs)))
 
@@ -1061,9 +1097,9 @@ def build_header_xml() -> bytes:
         (0, "바탕글", "Normal", 0, 0),
         (1, "주제목", "MainTitle", 1, 5),
         (2, "소제목", "SubTitle", 2, 6),
-        (3, "본문", "Body", 3, 0),
-        (4, "설명2", "Desc2", 4, 0),
-        (5, "설명3", "Desc3", 5, 7),
+        (3, "본문", "Body", 9, 0),
+        (4, "설명2", "Desc2", 8, 0),
+        (5, "설명3", "Desc3", 10, 7),
         (6, "강조", "Emphasis", 6, 8),
         (7, "예비제목", "ReserveHeading", 7, 5),
         (8, "예비본문A", "ReserveBodyA", 8, 0),

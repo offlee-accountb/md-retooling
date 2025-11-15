@@ -96,6 +96,26 @@ Phase 1에서 주제목·강조 표 같은 고정 규격을 반복 구현하면�
 `_append_text_with_bold()`는 `**강조**` 패턴을 탐지해 charPr ID 8 (강조) run을 삽입함.  
 주의: 빈 문자열일 경우 조용히 반환하도록 업데이트됐으니, filler 행에서도 문제 없음.
 
+## 8. 본문/설명 들여쓰기 & 줄 간격 가이드
+
+- **행걸이(hanging indent)는 `margin.intent`만 사용**하고 `margin.left/right`는 0으로 둡니다. Hangul은 `left` 값이 존재하면 전체 문단을 이동시키므로, 의도치 않은 좌측 여백이 생깁니다.
+- BlockType별 권장 intent (pt 단위 → HWPUNIT = pt×100):
+
+| BlockType | paraPr ID | 표시 | intent (pt) | intent (HWPUNIT) |
+|-----------|-----------|------|-------------|------------------|
+| BODY (`◦`) | 9         | 내용 | 30 pt       | -3000            |
+| DESC2 (`   -`) | 8     | 설명2| 37.5 pt     | -3750            |
+| DESC3 (`    *`) | 10   | 설명3| 35 pt       | -3500            |
+
+- intent 값은 음수로 설정하여 “첫 줄만 왼쪽으로 튀어나오고 나머지 줄은 기본 여백을 유지”하도록 합니다.
+- 줄 간격 기본값: BODY/DESC2/DESC3 모두 `lineSpacing type="PERCENT" value="160"`. DESC3도 LEFT 정렬을 유지해 한글이 임의로 CENTER로 바꾸지 않도록 합니다.
+- 들여쓰기/간격을 재조정할 때의 절차:
+  1. `converter/md_to_hwpx.py` 의 `para_defs`에서 대상 paraPr의 `margin.intent`를 수정합니다.
+  2. `output/*.hwpx`를 재생성하고 `Contents/header.xml`에서 해당 paraPr의 `intent`와 `left`가 정확히 기록됐는지 확인합니다.
+  3. 필요 시 한글에서 문서를 열어 Shift+Tab 기준 위치와 동일한지 확인합니다. (권장값: 내용 30 pt, 설명2 37.5 pt, 설명3 35 pt)
+
+- 추후 `hp:linesegarray`/`hp:lineseg`에 `flags=1441792`를 직접 넣으면 한글이 줄 영역을 재작성하지 않으므로, 문단 편집 시에도 들여쓰기가 유지됩니다.
+
 ---
 
 ## 향후 확장 아이디어

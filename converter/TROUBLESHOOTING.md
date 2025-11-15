@@ -41,6 +41,28 @@
 최신이 위로
 -->
 
+## [2025-11-15] 문제: 본문/설명 문단이 지나치게 오른쪽으로 밀림
+
+### 증상
+- `output/test_shift*.hwpx`에서 ◦, -, * 문단이 모두 동일한 지점에서 시작하지 않고, 수동 Shift+Tab보다 훨씬 오른쪽으로 이동함.
+- DESC3 설명줄은 좌측 정렬이어야 하는데 가운데 정렬처럼 보이며, 줄 간격도 들쭉날쭉해짐.
+- 한글에서 다시 Shift+Tab을 적용하면 정상 위치로 돌아오지만, 편집 기록이 지저분해지고 재변환 시 다시 깨짐.
+
+### 원인
+- paraPr 8/9/10에 행걸이(`intent`)와 좌측 여백(`left`)을 동시에 써서 “첫 줄만 왼쪽으로 빠져나오는” 대신 전체 문단이 `left` 값만큼 오른쪽으로 이동함.
+- Shift+Tab 기준 들여쓰기는 pt 단위(30, 37.5, 35pt)인데, 이전 코드는 mm로 환산된 큰 수(약 85/106/99pt 상당)를 사용하여 추가로 밀려남.
+
+### 해결 방법
+1. `converter/md_to_hwpx.py`의 paraPr 정의에서 `margin.left/right`를 제거하고 `intent`만 음수로 남겨 행걸이만 적용되도록 수정.
+2. 사용자 정의 기준(내용=30pt, 설명2=37.5pt, 설명3=35pt)에 맞춰 intent 값을 `-3000 / -3750 / -3500`으로 조정하였다. (HWPUNIT=pt×100)
+3. paraPr 8/9/10의 `lineSpacing`을 160%, DESC3 정렬을 LEFT로 유지해 Hangul이 추가로 가운데 정렬을 삽입하지 않도록 맞춤.
+4. 수정 후 `output/test_shift.hwpx`, `output/test_shift_sample.hwpx`를 재생성하고 `Contents/header.xml`에서 intent 값과 좌측 여백이 0인지 확인했다.
+
+### 참고
+- 관련 파일: `converter/md_to_hwpx.py` (`para_defs` 내 id 8/9/10)
+- 비교 자료: `converter/test_minimal_manual.hwpx`, `output/test_shift_sample.hwpx`
+- 향후 과제: `section0.xml`의 `hp:linesegarray`에 `flags=1441792`를 직접 넣어 Hangul이 라인분할을 재작성하지 않도록 하는 개선 예정
+
 ## [2025-11-17] 문제: 주제목/강조 표 규격이 스타일 문서와 다름
 
 ### 증상
