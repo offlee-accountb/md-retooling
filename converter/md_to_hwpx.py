@@ -19,6 +19,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Iterable, List
 import argparse
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -79,6 +80,8 @@ RUN_CHAR_OVERRIDE_MAP = {
     BlockType.PLAIN: "0",
 }
 
+INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
+
 # StyleID mapping (p@styleIDRef → hh:style@id in header.xml)
 STYLE_ID_MAP = {
     BlockType.TITLE: "1",
@@ -102,10 +105,10 @@ SPACER_CHAR_MAP = {
 
 # Spacer marker text: ↕(size)↕ so later manual/auto replace is easy
 SPACER_MARKER_MAP = {
-    BlockType.SUBTITLE: "↕10↕",
-    BlockType.BODY: "↕8↕",
-    BlockType.DESC2: "↕6↕",
-    BlockType.DESC3: "↕4↕",
+    BlockType.SUBTITLE: " ",
+    BlockType.BODY: " ",
+    BlockType.DESC2: " ",
+    BlockType.DESC3: " ",
 }
 
 
@@ -168,6 +171,44 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         blocks.append(Block(BlockType.PLAIN, original, stripped))
 
     return blocks
+
+
+BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
+    segments: List[tuple[str, bool]] = []
+    last = 0
+    for match in BOLD_PATTERN.finditer(text):
+        start, end = match.span()
+        if start > last:
+            segments.append((text[last:start], False))
+        segments.append((match.group(1), True))
+        last = end
+    if last < len(text):
+        segments.append((text[last:], False))
+    if not segments and text:
+        segments.append((text, False))
+    return segments
+
+
+def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full_text: str) -> None:
+    if full_text is None:
+        return
+    segments = _split_bold_segments(full_text)
+    if not segments:
+        segments = [(full_text, False)]
+    for seg_text, is_bold in segments:
+        if not seg_text:
+            continue
+        run_attrs = {}
+        if is_bold:
+            run_attrs["charPrIDRef"] = INLINE_BOLD_CHAR_ID
+        elif base_char_id is not None:
+            run_attrs["charPrIDRef"] = base_char_id
+        run = ET.SubElement(paragraph, _q("hp", "run"), run_attrs)
+        t = ET.SubElement(run, _q("hp", "t"))
+        t.text = seg_text
 
 
 NS = {
@@ -511,7 +552,7 @@ def build_header_xml() -> bytes:
         )
 
     para_defs = [
-        (0, "JUSTIFY", 100, {"font_line_height": "1", "snap_to_grid": "0"}),
+        (0, "JUSTIFY", 160, {"font_line_height": "1", "snap_to_grid": "0"}),
         (1, "CENTER", 130, {}),
         (2, "LEFT", 160, {}),
         (3, "LEFT", 160, {}),
@@ -765,27 +806,22 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
             )
             secpr_attached = True
 
-        # 실제 텍스트 run
+        # 실제 텍스트 run (inline bold 지원)
         char_id = RUN_CHAR_OVERRIDE_MAP.get(block.type)
-        run_attrs = {}
-        if char_id is not None:
-            run_attrs["charPrIDRef"] = char_id
-        run = ET.SubElement(p, _q("hp", "run"), run_attrs)
-        t = ET.SubElement(run, _q("hp", "t"))
-
-        # BlockType에 따라 머리 기호 복원
         if block.type == BlockType.SUBTITLE:
-            t.text = f"□ {block.text}"
+            text_content = f"□ {block.text}"
         elif block.type == BlockType.BODY:
-            t.text = f"◦ {block.text}"
+            text_content = f" ◦ {block.text}"
         elif block.type == BlockType.DESC2:
-            t.text = f"   - {block.text}"
+            text_content = f"   - {block.text}"
         elif block.type == BlockType.DESC3:
-            t.text = f"    * {block.text}"
+            text_content = f"    * {block.text}"
         elif block.type == BlockType.EMPHASIS:
-            t.text = f"◈ {block.text}"
+            text_content = f"◈ {block.text}"
         else:
-            t.text = block.text
+            text_content = block.text
+
+        _append_text_with_bold(p, char_id, text_content)
 
         p_id += 1
 

@@ -46,10 +46,10 @@
 
 ## 진행중인 이슈
 
-## [진행중] Spacer 줄(라인스페이서) 폰트/크기 미스매치
+## [해결됨] Spacer 줄(라인스페이서) 폰트/크기 미스매치
 
 **우선순위:** Medium  
-**담당 AI:** Codex (2025-11-15)
+**담당 AI:** Codex (2025-11-17)
 
 ### 상황
 - style_textbook 규칙에 따라 spacer(소제목/본문/설명2/설명3 사이 공백 줄)를 각각 10/8/6/4pt 맑은 고딕으로 넣어야 함.
@@ -65,17 +65,12 @@
 3. [Codex - 11/15] spacer charPr ID를 1~4로 낮춰 재배치 → **한글에서 정확히 10/8/6/4pt로 동작**
 4. [Codex - 11/15] 일반 텍스트 charPr를 6~12로 이동 → **ID 9 이후 다시 fallback 발생 (문제 재현)**
 5. [Codex - 11/15] 문단 run-level charPr를 제거하고 styleIDRef→header의 charPr에 의존하도록 수정 → **HWP에서 검증 필요 (style 경유 시 charPr ID 제한이 풀리는지 확인 예정)**
-6. [Codex - 11/15] charPr ID 0~8 범위만 재사용하도록 header.xml/런 매핑 재배치 (본문/설명2는 ID0, 주제목5, 소제목6, 설명3 7, 강조8) → **텍스트 스타일이 다시 의도대로 적용되는지 확인 중**
+6. [Codex - 11/17] charPr ID 0~8 범위만 재사용하도록 header.xml/런 매핑 재배치 (본문/설명2=0, 주제목=5, 소제목=6, 설명3=7, 강조=8) 및 RUN_CHAR_OVERRIDE_MAP 복구 → **Hangul에서 spacer/본문/제목 모두 의도대로 표시됨 (확인 완료)**
 
 ### 다음 AI에게
-- 바탕글 문단에서 사용 가능한 charPr ID가 0~8로 제한된다는 가설을 확정 지을 필요가 있음. 확인 방법:
-  1. 한글에서 제공하는 기본 서식(바탕글 포함) XML을 추출해 charPr/paraPr 매핑을 조사.
-  2. 20개 이상 charPr를 사용하는 공식 HWPX 레퍼런스를 찾아 header.xml을 비교.
-- 해결 방향 옵션:
-  1. **바탕글 전용 charPr ID를 0~8 안에서만 운용**하고, 나머지 스타일은 별도 paraPr/style로 분리.
-  2. spacer 전용 paraPr(예: `paraPrIDRef=7`)를 만들어 그 문단에서만 고유 charPr ID를 허용하도록 실험.
-  3. 만약 Hangul 내부 제약이라면, converter가 charPr ID를 자동 재배치(<=8)하고 포화되면 paraPr로 대체하는 로직 필요.
-- 참고: `output/test_styled6.hwpx`는 spacer 성공 사례(1~4)와 실패 사례(9 이후)를 동시에 포함함.
+- Hangul 0~8 제약을 준수하는 한 추가 작업 불필요. 새 스타일이 필요하면 charPr ID 0~8 범위에서 재배치하거나 전용 paraPr를 도입해야 함.
+- `converter/TROUBLESHOOTING.md`에 해결 기록 남김. 추가 재현 시 해당 문서를 참고.
+- 참고: `output/test_styled6.hwpx`, `output/test_run.hwpx`
 
 ### 관련 파일
 - `converter/md_to_hwpx.py` (`build_header_xml`, `build_section0_xml`)

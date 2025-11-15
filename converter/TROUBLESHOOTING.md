@@ -41,6 +41,27 @@
 최신이 위로
 -->
 
+## [2025-11-17] 문제: 스타일 텍스트가 기본 바탕글 폰트로 돌아감
+
+### 증상
+- spacer 줄은 정상 높이를 유지하지만 주제목/소제목/본문/설명 계열 텍스트가 모두 기본 바탕글 폰트(맑은 고딕 10pt)로 표시됨.
+- charPr ID 5~11에 매핑된 스타일이 존재함에도 한글에서 열면 폰트/크기 차이가 사라지고 기본 서식으로 fallback.
+
+### 원인
+- Hangul은 **동일한 paraPr(바탕글)**를 공유하는 문단에서 run-level charPr ID가 8을 초과하면 height/폰트를 무시하고 기본값으로 되돌리는 제약이 있음.
+- RUN_CHAR_OVERRIDE_MAP을 제거하고 styleIDRef만으로 charPr을 참조했을 때, 한글이 해당 스타일의 charPr ID(9+)를 동일한 제약으로 취급하며 무시.
+- header.xml의 charPr 정의도 0/1/2 외 ID에 대해 Hangul이 fallback 하면서 stile_textbook 요구사항이 깨짐.
+
+### 해결 방법
+1. `converter/md_to_hwpx.py`에서 RUN_CHAR_OVERRIDE_MAP을 재도입하여 각 BlockType이 **ID 0~8 범위**만 사용하도록 지정 (본문/설명2=0, 주제목=5, 소제목=6, 설명3=7, 강조=8 등).
+2. `build_header_xml()`의 char_defs 테이블을 ID 0~8까지만 남기고 각 스타일의 폰트/크기를 해당 ID에 재배치. Spacer용 1~4는 유지, 텍스트 스타일은 5~8에 할당.
+3. style_defs 및 STYLE_ID_MAP, RUN_CHAR_OVERRIDE_MAP이 동일한 charPr ID를 가리키도록 업데이트.
+4. 한글에서 `output/test_run.hwpx` 확인 시 모든 스타일이 명세대로 출력되는지 검증.
+
+### 참고
+- 관련 이슈: `converter/CURRENT_ISSUES.md` – “Spacer 줄(라인스페이서) 폰트/크기 미스매치”
+- 수정 라인: `converter/md_to_hwpx.py` (RUN_CHAR_OVERRIDE_MAP, char_defs, style_defs, section0 run 생성부)
+
 ## [2025-11-15] 문제: charPr ID 9 이상이 무시되어 줄 높이가 틀어짐
 
 ### 증상
