@@ -82,6 +82,20 @@ RUN_CHAR_OVERRIDE_MAP = {
 
 INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
 
+HWPUNITS_PER_MM = 283.464566929
+
+PAGE_WIDTH_MM = 210.0
+PAGE_HEIGHT_MM = 297.0
+PAGE_WIDTH_HWP = "59528"   # matches test_minimal_manual.hwpx
+PAGE_HEIGHT_HWP = "84186"
+MARGIN_TOP_MM = 15.0
+MARGIN_BOTTOM_MM = 15.0
+MARGIN_LEFT_MM = 20.0
+MARGIN_RIGHT_MM = 20.0
+MARGIN_HEADER_MM = 10.0
+MARGIN_FOOTER_MM = 10.0
+PAGE_BORDER_OFFSET_MM = 5.0
+
 # StyleID mapping (p@styleIDRef → hh:style@id in header.xml)
 STYLE_ID_MAP = {
     BlockType.TITLE: "1",
@@ -209,6 +223,12 @@ def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full
         run = ET.SubElement(paragraph, _q("hp", "run"), run_attrs)
         t = ET.SubElement(run, _q("hp", "t"))
         t.text = seg_text
+
+
+def mm_to_hwp(mm: float) -> str:
+    """Convert millimeters to Hangul internal HWPUNIT."""
+
+    return str(int(mm * HWPUNITS_PER_MM))
 
 
 NS = {
@@ -787,22 +807,99 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
             page_pr = ET.SubElement(
                 sec_pr,
                 _q("hp", "pagePr"),
-                {"landscape": "WIDELY", "width": "59528", "height": "84186", "gutterType": "LEFT_ONLY"},
+                {
+                    "landscape": "WIDELY",
+                    "width": PAGE_WIDTH_HWP,
+                    "height": PAGE_HEIGHT_HWP,
+                    "gutterType": "LEFT_ONLY",
+                },
             )
-            # 페이지 여백: PHASE1_INPUT_FORMAT (A4, 위/아래 15mm, 좌/우 20mm, 머리말/꼬리말 10mm)
-            # test_inputmodel.hwpx의 수치를 그대로 사용
+            # 페이지 여백: style_textbook 명세 (A4 세로, 좌우 20mm, 상하 15mm, 머리말/꼬리말 10mm)
             ET.SubElement(
                 page_pr,
                 _q("hp", "margin"),
                 {
-                    "header": "2834",
-                    "footer": "2834",
+                    "header": mm_to_hwp(MARGIN_HEADER_MM),
+                    "footer": mm_to_hwp(MARGIN_FOOTER_MM),
                     "gutter": "0",
-                    "left": "5669",
-                    "right": "5669",
-                    "top": "4251",
-                    "bottom": "4252",
+                    "left": mm_to_hwp(MARGIN_LEFT_MM),
+                    "right": mm_to_hwp(MARGIN_RIGHT_MM),
+                    "top": mm_to_hwp(MARGIN_TOP_MM),
+                    "bottom": mm_to_hwp(MARGIN_BOTTOM_MM),
                 },
+            )
+            footnote_pr = ET.SubElement(sec_pr, _q("hp", "footNotePr"))
+            ET.SubElement(
+                footnote_pr,
+                _q("hp", "autoNumFormat"),
+                {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
+            )
+            ET.SubElement(
+                footnote_pr,
+                _q("hp", "noteLine"),
+                {"length": "-1", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
+            )
+            ET.SubElement(
+                footnote_pr,
+                _q("hp", "noteSpacing"),
+                {"betweenNotes": "283", "belowLine": "567", "aboveLine": "850"},
+            )
+            ET.SubElement(footnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
+            ET.SubElement(
+                footnote_pr,
+                _q("hp", "placement"),
+                {"place": "EACH_COLUMN", "beneathText": "0"},
+            )
+            endnote_pr = ET.SubElement(sec_pr, _q("hp", "endNotePr"))
+            ET.SubElement(
+                endnote_pr,
+                _q("hp", "autoNumFormat"),
+                {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
+            )
+            ET.SubElement(
+                endnote_pr,
+                _q("hp", "noteLine"),
+                {"length": "14692344", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
+            )
+            ET.SubElement(
+                endnote_pr,
+                _q("hp", "noteSpacing"),
+                {"betweenNotes": "0", "belowLine": "567", "aboveLine": "850"},
+            )
+            ET.SubElement(endnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
+            ET.SubElement(
+                endnote_pr,
+                _q("hp", "placement"),
+                {"place": "END_OF_DOCUMENT", "beneathText": "0"},
+            )
+            for border_type in ("BOTH", "EVEN", "ODD"):
+                page_border = ET.SubElement(
+                    sec_pr,
+                    _q("hp", "pageBorderFill"),
+                    {
+                        "type": border_type,
+                        "borderFillIDRef": "1",
+                        "textBorder": "PAPER",
+                        "headerInside": "0",
+                        "footerInside": "0",
+                        "fillArea": "PAPER",
+                    },
+                )
+                ET.SubElement(
+                    page_border,
+                    _q("hp", "offset"),
+                    {
+                        "left": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                        "right": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                        "top": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                        "bottom": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                    },
+                )
+            ctrl = ET.SubElement(run_sec, _q("hp", "ctrl"))
+            ET.SubElement(
+                ctrl,
+                _q("hp", "colPr"),
+                {"id": "", "type": "NEWSPAPER", "layout": "LEFT", "colCount": "1", "sameSz": "1", "sameGap": "0"},
             )
             secpr_attached = True
 
