@@ -66,14 +66,16 @@ PARA_STYLE_MAP = {
     BlockType.PLAIN: "0",
 }
 
-CHAR_STYLE_MAP = {
-    # NOTE: IDs must match charPr definitions in header.xml
-    BlockType.TITLE: "6",
-    BlockType.SUBTITLE: "7",
-    BlockType.BODY: "8",
-    BlockType.DESC2: "9",
-    BlockType.DESC3: "10",
-    BlockType.EMPHASIS: "11",
+# Hangul only honors run-level charPr IDs ≤8 when the paragraph shares the 바탕글
+# paraPr. Keep explicit IDs for each logical block so we never emit 9+; spacer runs
+# still use 1~4 via SPACER_CHAR_MAP.
+RUN_CHAR_OVERRIDE_MAP = {
+    BlockType.TITLE: "5",
+    BlockType.SUBTITLE: "6",
+    BlockType.BODY: "0",
+    BlockType.DESC2: "0",
+    BlockType.DESC3: "7",
+    BlockType.EMPHASIS: "8",
     BlockType.PLAIN: "0",
 }
 
@@ -416,26 +418,18 @@ def build_header_xml() -> bytes:
             ET.SubElement(char, _q("hh", "bold"))
 
     char_defs = [
-        (0, 1000, 2, False),   # 기본 (맑은 고딕 10pt)
-        # Spacer charPr (line-height 확보용, Option A 안전빵)
+        # Base/body text (휴먼명조 15pt) lives at ID 0 so the 바탕글 fallback is safe.
+        (0, 1500, 1, False),
+        # Spacer charPr (line-height 확보용, Hangul-safe IDs 1~4)
         (1, 1000, 2, False),   # 소제목 spacer 맑은고딕 10pt
         (2, 800, 2, False),    # 본문 spacer 맑은고딕 8pt
         (3, 600, 2, False),    # 설명2 spacer 맑은고딕 6pt
         (4, 400, 2, False),    # 설명3 spacer 맑은고딕 4pt
-        # 공식 6스타일 (요청서 준수)
-        (6, 1500, 0, True),    # 주제목 HY 15pt Bold
-        (7, 1500, 0, False),   # 소제목 HY 15pt
-        (8, 1500, 1, False),   # 본문 휴먼 15pt
-        (9, 1500, 1, False),   # 설명2 휴먼 15pt
-        (10, 1200, 2, False),  # 설명3 맑은고딕 12pt
-        (11, 1500, 1, True),   # 강조 휴먼 15pt Bold
-        # 인라인/예비 스타일
-        (12, 1500, 1, True),   # 인라인 Bold (휴먼 15pt)
-        (13, 1400, 0, False),  # 예비 제목 (HY 14pt)
-        (14, 1300, 1, False),  # 예비 본문 (휴먼 13pt)
-        (15, 1200, 2, False),  # 예비 본문B (맑은 고딕 12pt)
-        (16, 1100, 2, False),  # 예비 캡션 (맑은 고딕 11pt)
-        (17, 1300, 1, True),   # 예비 강조 (휴먼 13pt Bold)
+        # 본문 계열 스타일 (ID ≤ 8만 사용)
+        (5, 1500, 0, True),    # 주제목 HY 15pt Bold
+        (6, 1500, 0, False),   # 소제목 HY 15pt
+        (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
+        (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
     ]
     for cid, height, font_id, is_bold in char_defs:
         add_char_pr(cid, height, font_id, bold=is_bold)
@@ -598,17 +592,17 @@ def build_header_xml() -> bytes:
 
     style_defs = [
         (0, "바탕글", "Normal", 0, 0),
-        (1, "주제목", "MainTitle", 1, 6),
-        (2, "소제목", "SubTitle", 2, 7),
-        (3, "본문", "Body", 3, 8),
-        (4, "설명2", "Desc2", 4, 9),
-        (5, "설명3", "Desc3", 5, 10),
-        (6, "강조", "Emphasis", 6, 11),
-        (7, "예비제목", "ReserveHeading", 7, 13),
-        (8, "예비본문A", "ReserveBodyA", 8, 14),
-        (9, "예비본문B", "ReserveBodyB", 9, 15),
-        (10, "예비캡션", "ReserveCaption", 10, 16),
-        (11, "예비강조", "ReserveEmphasis", 11, 17),
+        (1, "주제목", "MainTitle", 1, 5),
+        (2, "소제목", "SubTitle", 2, 6),
+        (3, "본문", "Body", 3, 0),
+        (4, "설명2", "Desc2", 4, 0),
+        (5, "설명3", "Desc3", 5, 7),
+        (6, "강조", "Emphasis", 6, 8),
+        (7, "예비제목", "ReserveHeading", 7, 5),
+        (8, "예비본문A", "ReserveBodyA", 8, 0),
+        (9, "예비본문B", "ReserveBodyB", 9, 7),
+        (10, "예비캡션", "ReserveCaption", 10, 7),
+        (11, "예비강조", "ReserveEmphasis", 11, 8),
     ]
     for sid, name, eng, para_ref, char_ref in style_defs:
         add_style(sid, name, eng, para_ref, char_ref)
@@ -703,8 +697,11 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
 
         # 첫 실제 문단에만 secPr/페이지 설정 포함
         if not secpr_attached:
-            char_id_for_sec = CHAR_STYLE_MAP.get(block.type, "0")
-            run_sec = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": char_id_for_sec})
+            char_id_for_sec = RUN_CHAR_OVERRIDE_MAP.get(block.type)
+            run_sec_attrs = {}
+            if char_id_for_sec is not None:
+                run_sec_attrs["charPrIDRef"] = char_id_for_sec
+            run_sec = ET.SubElement(p, _q("hp", "run"), run_sec_attrs)
             sec_pr = ET.SubElement(
                 run_sec,
                 _q("hp", "secPr"),
@@ -769,8 +766,11 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
             secpr_attached = True
 
         # 실제 텍스트 run
-        char_id = CHAR_STYLE_MAP.get(block.type, "0")
-        run = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": char_id})
+        char_id = RUN_CHAR_OVERRIDE_MAP.get(block.type)
+        run_attrs = {}
+        if char_id is not None:
+            run_attrs["charPrIDRef"] = char_id
+        run = ET.SubElement(p, _q("hp", "run"), run_attrs)
         t = ET.SubElement(run, _q("hp", "t"))
 
         # BlockType에 따라 머리 기호 복원

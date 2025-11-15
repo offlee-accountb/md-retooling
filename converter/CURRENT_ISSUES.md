@@ -64,6 +64,8 @@
 2. [Codex - 11/15] spacer 문단을 바탕글 스타일로 통일하고 run에만 charPr 10~13 (맑은고딕 10/8/6/4pt) 적용 → **한글 결과에서 여전히 4/15/10/10pt로 관측됨**
 3. [Codex - 11/15] spacer charPr ID를 1~4로 낮춰 재배치 → **한글에서 정확히 10/8/6/4pt로 동작**
 4. [Codex - 11/15] 일반 텍스트 charPr를 6~12로 이동 → **ID 9 이후 다시 fallback 발생 (문제 재현)**
+5. [Codex - 11/15] 문단 run-level charPr를 제거하고 styleIDRef→header의 charPr에 의존하도록 수정 → **HWP에서 검증 필요 (style 경유 시 charPr ID 제한이 풀리는지 확인 예정)**
+6. [Codex - 11/15] charPr ID 0~8 범위만 재사용하도록 header.xml/런 매핑 재배치 (본문/설명2는 ID0, 주제목5, 소제목6, 설명3 7, 강조8) → **텍스트 스타일이 다시 의도대로 적용되는지 확인 중**
 
 ### 다음 AI에게
 - 바탕글 문단에서 사용 가능한 charPr ID가 0~8로 제한된다는 가설을 확정 지을 필요가 있음. 확인 방법:
