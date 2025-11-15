@@ -52,21 +52,28 @@
 **담당 AI:** Codex (2025-11-15)
 
 ### 상황
-- style_textbook 규칙에 따라 spacer(소제목/본문/설명2/설명3 사이 공백 줄)를 각각 10/8/6/4pt 맑은 고딕으로 넣어야 하지만,
-  - 한글에서 실제로 확인해보면 여전히 기본 바탕글(한컴바탕 10pt)에 가까운 값으로 표시됨.
-  - spacer 문단이 바탕글 스타일로 보이면서 폰트 크기만 반영되지 않거나, 특정 줄만 잘못된 크기를 사용.
-- `<hp:linesegarray>`는 쓰지 않기로 했으며, 순수하게 run의 charPr 높이만으로 줄간격을 제어해야 한다는 추가 요구 있음.
+- style_textbook 규칙에 따라 spacer(소제목/본문/설명2/설명3 사이 공백 줄)를 각각 10/8/6/4pt 맑은 고딕으로 넣어야 함.
+- 2025-11-15 분석 결과: **바탕글 문단에서 run-level charPr ID가 0~8 범위를 벗어나면 한글이 높이를 무시**하고 기본값으로 되돌린다.
+  - spacer ID를 1~4로 낮추면 정확히 10/8/6/4pt로 표시되는 것이 확인됨.
+  - 본문/설명 스타일을 위해 6 이상 ID를 사용했더니 9번 이후부터 다시 fallback 증상이 반복됨.
+- `<hp:linesegarray>`는 쓰지 않기로 했으며, 순수하게 run의 charPr/paraPr 조합으로 줄간격을 제어해야 한다는 요구 그대로 유지.
+- `output/test_styled8.hwpx` 기준: **스타일 ID 1~6(본문은 charPr 8)만 요구사항을 정확히 준수**하고 있으며, 예비 스타일 7/9/10/11은 현재 폰트·정렬·pt값이 사양과 다름. 예비 스타일이 잘못 쓰이지 않도록 추가 가이드 필요.
 
 ### 시도한 방법들
 1. [Codex - 11/15] spacer용 paraPr/style을 따로 정의 → **한글에서 기본 스타일로 덮여 보임**
 2. [Codex - 11/15] spacer 문단을 바탕글 스타일로 통일하고 run에만 charPr 10~13 (맑은고딕 10/8/6/4pt) 적용 → **한글 결과에서 여전히 4/15/10/10pt로 관측됨**
+3. [Codex - 11/15] spacer charPr ID를 1~4로 낮춰 재배치 → **한글에서 정확히 10/8/6/4pt로 동작**
+4. [Codex - 11/15] 일반 텍스트 charPr를 6~12로 이동 → **ID 9 이후 다시 fallback 발생 (문제 재현)**
 
 ### 다음 AI에게
-- `output/test_styled6.hwpx`를 한글에서 열어 spacer 줄의 실제 폰트/높이가 어떻게 결정되는지 다시 확인.
-- 한글이 run-level charPr보다 paraPr/style 레벨의 값을 우선시한다면:
-  1. spacer run에 텍스트 대신 `<hp:ctrl>` 또는 빈 cell/table을 써서 강제 높이 지정,
-  2. 또는 paraPr margin/lineSpacing을 직접 조정해 여백을 확보하는 쪽으로 설계 변경.
-- `<hp:linesegarray>` 없이 run만으로 줄 높이를 정확히 제어하는 사례가 있는지 `test_inputmodel.hwpx`나 스타일북에서 추가 사례 조사 필요.
+- 바탕글 문단에서 사용 가능한 charPr ID가 0~8로 제한된다는 가설을 확정 지을 필요가 있음. 확인 방법:
+  1. 한글에서 제공하는 기본 서식(바탕글 포함) XML을 추출해 charPr/paraPr 매핑을 조사.
+  2. 20개 이상 charPr를 사용하는 공식 HWPX 레퍼런스를 찾아 header.xml을 비교.
+- 해결 방향 옵션:
+  1. **바탕글 전용 charPr ID를 0~8 안에서만 운용**하고, 나머지 스타일은 별도 paraPr/style로 분리.
+  2. spacer 전용 paraPr(예: `paraPrIDRef=7`)를 만들어 그 문단에서만 고유 charPr ID를 허용하도록 실험.
+  3. 만약 Hangul 내부 제약이라면, converter가 charPr ID를 자동 재배치(<=8)하고 포화되면 paraPr로 대체하는 로직 필요.
+- 참고: `output/test_styled6.hwpx`는 spacer 성공 사례(1~4)와 실패 사례(9 이후)를 동시에 포함함.
 
 ### 관련 파일
 - `converter/md_to_hwpx.py` (`build_header_xml`, `build_section0_xml`)
