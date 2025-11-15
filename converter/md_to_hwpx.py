@@ -56,23 +56,51 @@ class Block:
 #   and just update these maps without touching the rest of the code.
 
 PARA_STYLE_MAP = {
-    BlockType.TITLE: "0",      # will later map to title paraPr
-    BlockType.SUBTITLE: "0",
-    BlockType.BODY: "0",
-    BlockType.DESC2: "0",
-    BlockType.DESC3: "0",
-    BlockType.EMPHASIS: "0",
+    # NOTE: IDs must match paraPr definitions in header.xml
+    BlockType.TITLE: "1",
+    BlockType.SUBTITLE: "2",
+    BlockType.BODY: "3",
+    BlockType.DESC2: "4",
+    BlockType.DESC3: "5",
+    BlockType.EMPHASIS: "6",
     BlockType.PLAIN: "0",
 }
 
 CHAR_STYLE_MAP = {
-    BlockType.TITLE: "0",
-    BlockType.SUBTITLE: "0",
-    BlockType.BODY: "0",
-    BlockType.DESC2: "0",
-    BlockType.DESC3: "0",
-    BlockType.EMPHASIS: "0",
+    # NOTE: IDs must match charPr definitions in header.xml
+    BlockType.TITLE: "1",
+    BlockType.SUBTITLE: "2",
+    BlockType.BODY: "3",
+    BlockType.DESC2: "4",
+    BlockType.DESC3: "5",
+    BlockType.EMPHASIS: "6",
     BlockType.PLAIN: "0",
+}
+
+# StyleID mapping (p@styleIDRef → hh:style@id in header.xml)
+STYLE_ID_MAP = {
+    BlockType.TITLE: "1",
+    BlockType.SUBTITLE: "2",
+    BlockType.BODY: "3",
+    BlockType.DESC2: "4",
+    BlockType.DESC3: "5",
+    BlockType.EMPHASIS: "6",
+    BlockType.PLAIN: "0",
+}
+
+# Spacer paragraph mapping: certain BlockType 앞에 여백용 문단 삽입
+SPACER_PARA_MAP = {
+    BlockType.SUBTITLE: "20",
+    BlockType.BODY: "21",
+    BlockType.DESC2: "22",
+    BlockType.DESC3: "23",
+}
+
+SPACER_CHAR_MAP = {
+    BlockType.SUBTITLE: "10",
+    BlockType.BODY: "11",
+    BlockType.DESC2: "12",
+    BlockType.DESC3: "13",
 }
 
 
@@ -151,6 +179,16 @@ NS = {
     "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
 }
 
+# Register all namespace prefixes to avoid ns0, ns1, etc.
+for prefix, uri in NS.items():
+    ET.register_namespace(prefix, uri)
+
+# Additional namespaces
+ET.register_namespace("hv", "http://www.hancom.co.kr/hwpml/2011/version")
+ET.register_namespace("odf", "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0")
+ET.register_namespace("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+ET.register_namespace("config", "urn:oasis:names:tc:opendocument:xmlns:config:1.0")
+
 
 def _q(prefix: str, tag: str) -> str:
     """Qualified tag helper: _q("hp", "p") → '{ns}p'."""
@@ -200,172 +238,362 @@ def build_header_xml() -> bytes:
 
     ref_list = ET.SubElement(head, _q("hh", "refList"))
 
-    # fontfaces: HANGUL에 맑은 고딕 하나만 정의
-    fontfaces = ET.SubElement(ref_list, _q("hh", "fontfaces"), {"itemCnt": "1"})
-    ff_hangul = ET.SubElement(fontfaces, _q("hh", "fontface"), {"lang": "HANGUL", "fontCnt": "1"})
-    font0 = ET.SubElement(
-        ff_hangul,
-        _q("hh", "font"),
-        {"id": "0", "face": "맑은 고딕", "type": "TTF", "isEmbedded": "0"},
-    )
-    ET.SubElement(
-        font0,
-        _q("hh", "typeInfo"),
-        {
-            "familyType": "FCAT_GOTHIC",
-            "weight": "5",
-            "proportion": "3",
-            "contrast": "2",
-            "strokeVariation": "0",
-            "armStyle": "0",
-            "letterform": "2",
-            "midline": "0",
-            "xHeight": "4",
-        },
-    )
+    # fontfaces: 7개 언어 전부 정의 (CRITICAL - Hangul requires all 7 languages)
+    # - id=0: 맑은 고딕
+    # - id=1: HY헤드라인M
+    # - id=2: 휴먼명조
+    fontfaces = ET.SubElement(ref_list, _q("hh", "fontfaces"), {"itemCnt": "7"})
 
-    # borderFills: 단순 기본 borderFill 하나
-    border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "1"})
-    ET.SubElement(
-        border_fills,
-        _q("hh", "borderFill"),
-        {
-            "id": "1",
-            "threeD": "0",
-            "shadow": "0",
-            "centerLine": "NONE",
-            "breakCellSeparateLine": "0",
-        },
-    )
+    def _add_font(ff_parent, font_id: int, face: str) -> None:
+        font = ET.SubElement(
+            ff_parent,
+            _q("hh", "font"),
+            {"id": str(font_id), "face": face, "type": "TTF", "isEmbedded": "0"},
+        )
+        ET.SubElement(
+            font,
+            _q("hh", "typeInfo"),
+            {
+                "familyType": "FCAT_GOTHIC",
+                "weight": "5",
+                "proportion": "3",
+                "contrast": "2",
+                "strokeVariation": "0",
+                "armStyle": "0",
+                "letterform": "2",
+                "midline": "0",
+                "xHeight": "4",
+            },
+        )
 
-    # charProperties: 본문용 하나 (id 0), fontRef 0 사용
-    char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "1"})
-    char0 = ET.SubElement(
-        char_props,
-        _q("hh", "charPr"),
-        {
-            "id": "0",
-            "height": "1000",
-            "textColor": "#000000",
-            "shadeColor": "none",
-            "useFontSpace": "0",
-            "useKerning": "0",
-            "symMark": "NONE",
-            "borderFillIDRef": "1",
-        },
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "fontRef"),
-        {"hangul": "0", "latin": "0", "hanja": "0", "japanese": "0", "other": "0", "symbol": "0", "user": "0"},
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "ratio"),
-        {"hangul": "100", "latin": "100", "hanja": "100", "japanese": "100", "other": "100", "symbol": "100", "user": "100"},
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "spacing"),
-        {"hangul": "0", "latin": "0", "hanja": "0", "japanese": "0", "other": "0", "symbol": "0", "user": "0"},
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "relSz"),
-        {"hangul": "100", "latin": "100", "hanja": "100", "japanese": "100", "other": "100", "symbol": "100", "user": "100"},
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "offset"),
-        {"hangul": "0", "latin": "0", "hanja": "0", "japanese": "0", "other": "0", "symbol": "0", "user": "0"},
-    )
-    ET.SubElement(
-        char0,
-        _q("hh", "underline"),
-        {"type": "NONE", "shape": "SOLID", "color": "#000000"},
-    )
-    ET.SubElement(char0, _q("hh", "strikeout"), {"shape": "NONE", "color": "#000000"})
-    ET.SubElement(char0, _q("hh", "outline"), {"type": "NONE"})
-    ET.SubElement(
-        char0,
-        _q("hh", "shadow"),
-        {"type": "NONE", "color": "#B2B2B2", "offsetX": "10", "offsetY": "10"},
-    )
+    # 공통 폰트 정의를 위한 헬퍼
+    def add_fontface(lang: str) -> None:
+        ff = ET.SubElement(fontfaces, _q("hh", "fontface"), {"lang": lang, "fontCnt": "3"})
+        _add_font(ff, 0, "맑은 고딕")
+        _add_font(ff, 1, "HY헤드라인M")
+        _add_font(ff, 2, "휴먼명조")
 
-    # tabProperties: 기본 하나
-    tab_props = ET.SubElement(ref_list, _q("hh", "tabProperties"), {"itemCnt": "1"})
+    # 7개 언어 모두 추가
+    for lang in ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]:
+        add_fontface(lang)
+
+    # borderFills: 최소 2개 필요 (참조 파일 기준)
+    border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "2"})
+
+    # borderFill id="1" - 기본
+    bf1 = ET.SubElement(border_fills, _q("hh", "borderFill"), {
+        "id": "1",
+        "threeD": "0",
+        "shadow": "0",
+        "centerLine": "NONE",
+        "breakCellSeparateLine": "0",
+    })
+    ET.SubElement(bf1, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+    ET.SubElement(bf1, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+    ET.SubElement(bf1, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf1, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf1, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf1, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf1, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
+
+    # borderFill id="2" - fillBrush 포함
+    bf2 = ET.SubElement(border_fills, _q("hh", "borderFill"), {
+        "id": "2",
+        "threeD": "0",
+        "shadow": "0",
+        "centerLine": "NONE",
+        "breakCellSeparateLine": "0",
+    })
+    ET.SubElement(bf2, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+    ET.SubElement(bf2, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+    ET.SubElement(bf2, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf2, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf2, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf2, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+    ET.SubElement(bf2, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
+    fillBrush = ET.SubElement(bf2, _q("hc", "fillBrush"))
+    ET.SubElement(fillBrush, _q("hc", "winBrush"), {"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
+
+    # charProperties: 글자 모양 정의 (id 0 = 기본, 나머지는 BlockType/여백용/볼드용)
+    char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
+
+    def add_char_pr(char_id: int, height: int, hangul_font_id: int) -> None:
+        char = ET.SubElement(
+            char_props,
+            _q("hh", "charPr"),
+            {
+                "id": str(char_id),
+                "height": str(height),
+                "textColor": "#000000",
+                "shadeColor": "none",
+                "useFontSpace": "0",
+                "useKerning": "0",
+                "symMark": "NONE",
+                "borderFillIDRef": "2",
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "fontRef"),
+            {
+                "hangul": str(hangul_font_id),
+                "latin": str(hangul_font_id),
+                "hanja": str(hangul_font_id),
+                "japanese": str(hangul_font_id),
+                "other": str(hangul_font_id),
+                "symbol": str(hangul_font_id),
+                "user": str(hangul_font_id),
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "ratio"),
+            {
+                "hangul": "100",
+                "latin": "100",
+                "hanja": "100",
+                "japanese": "100",
+                "other": "100",
+                "symbol": "100",
+                "user": "100",
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "spacing"),
+            {
+                "hangul": "0",
+                "latin": "0",
+                "hanja": "0",
+                "japanese": "0",
+                "other": "0",
+                "symbol": "0",
+                "user": "0",
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "relSz"),
+            {
+                "hangul": "100",
+                "latin": "100",
+                "hanja": "100",
+                "japanese": "100",
+                "other": "100",
+                "symbol": "100",
+                "user": "100",
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "offset"),
+            {
+                "hangul": "0",
+                "latin": "0",
+                "hanja": "0",
+                "japanese": "0",
+                "other": "0",
+                "symbol": "0",
+                "user": "0",
+            },
+        )
+        ET.SubElement(
+            char,
+            _q("hh", "underline"),
+            {"type": "NONE", "shape": "SOLID", "color": "#000000"},
+        )
+        ET.SubElement(char, _q("hh", "strikeout"), {"shape": "NONE", "color": "#000000"})
+        ET.SubElement(char, _q("hh", "outline"), {"type": "NONE"})
+        ET.SubElement(
+            char,
+            _q("hh", "shadow"),
+            {"type": "NONE", "color": "#B2B2B2", "offsetX": "10", "offsetY": "10"},
+        )
+
+    # 기본 바탕글 (맑은 고딕, 약 10pt)
+    add_char_pr(0, 1000, 0)
+    # TITLE / SUBTITLE / BODY / DESC2 / EMPHASIS (15pt)
+    add_char_pr(1, 1500, 1)  # TITLE: HY헤드라인M
+    add_char_pr(2, 1500, 1)  # SUBTITLE: HY헤드라인M
+    add_char_pr(3, 1500, 2)  # BODY: 휴먼명조
+    add_char_pr(4, 1500, 2)  # DESC2: 휴먼명조
+    add_char_pr(6, 1500, 2)  # EMPHASIS: 휴먼명조 (Bold는 후속 개선에서 반영)
+    # DESC3 (12pt, 맑은 고딕)
+    add_char_pr(5, 1200, 0)
+    # Spacer 줄 (10/8/6/4pt, 맑은 고딕)
+    add_char_pr(10, 1000, 0)
+    add_char_pr(11, 800, 0)
+    add_char_pr(12, 600, 0)
+    add_char_pr(13, 400, 0)
+    # 공통 Bold 글자모양 (폰트는 맑은 고딕, 높이는 15pt 수준)
+    add_char_pr(100, 1500, 0)
+    char_props.set("itemCnt", "11")
+
+    # tabProperties: 3개 (참조 파일 기준)
+    tab_props = ET.SubElement(ref_list, _q("hh", "tabProperties"), {"itemCnt": "3"})
     ET.SubElement(tab_props, _q("hh", "tabPr"), {"id": "0", "autoTabLeft": "0", "autoTabRight": "0"})
+    ET.SubElement(tab_props, _q("hh", "tabPr"), {"id": "1", "autoTabLeft": "1", "autoTabRight": "0"})
+    ET.SubElement(tab_props, _q("hh", "tabPr"), {"id": "2", "autoTabLeft": "0", "autoTabRight": "1"})
 
-    # paraProperties: 기본 문단 하나 (id 0)
-    para_props = ET.SubElement(ref_list, _q("hh", "paraProperties"), {"itemCnt": "1"})
-    para0 = ET.SubElement(
-        para_props,
-        _q("hh", "paraPr"),
-        {
-            "id": "0",
-            "tabPrIDRef": "0",
-            "condense": "0",
-            "fontLineHeight": "0",
-            "snapToGrid": "1",
-            "suppressLineNumbers": "0",
-            "checked": "0",
-        },
-    )
-    ET.SubElement(para0, _q("hh", "align"), {"horizontal": "JUSTIFY", "vertical": "BASELINE"})
-    ET.SubElement(para0, _q("hh", "heading"), {"type": "NONE", "idRef": "0", "level": "0"})
+    # paraProperties: 문단 모양 정의 (id 0 = 기본, 나머지는 BlockType/여백용)
+    para_props = ET.SubElement(ref_list, _q("hh", "paraProperties"), {"itemCnt": "0"})
+
+    def add_para_pr(para_id: int, horizontal_align: str, line_spacing_value: int) -> None:
+        para = ET.SubElement(
+            para_props,
+            _q("hh", "paraPr"),
+            {
+                "id": str(para_id),
+                "tabPrIDRef": "0",
+                "condense": "0",
+                "fontLineHeight": "0",
+                "snapToGrid": "1",
+                "suppressLineNumbers": "0",
+                "checked": "0",
+            },
+        )
+        ET.SubElement(
+            para,
+            _q("hh", "align"),
+            {"horizontal": horizontal_align, "vertical": "BASELINE"},
+        )
+        ET.SubElement(para, _q("hh", "heading"), {"type": "NONE", "idRef": "0", "level": "0"})
+        ET.SubElement(
+            para,
+            _q("hh", "breakSetting"),
+            {
+                "breakLatinWord": "KEEP_WORD",
+                "breakNonLatinWord": "KEEP_WORD",
+                "widowOrphan": "0",
+                "keepWithNext": "0",
+                "keepLines": "0",
+                "pageBreakBefore": "0",
+                "lineWrap": "BREAK",
+            },
+        )
+        ET.SubElement(para, _q("hh", "autoSpacing"), {"eAsianEng": "0", "eAsianNum": "0"})
+        margin_el = ET.SubElement(para, _q("hh", "margin"))
+        ET.SubElement(margin_el, _q("hc", "intent"), {"value": "0", "unit": "HWPUNIT"})
+        ET.SubElement(margin_el, _q("hc", "left"), {"value": "0", "unit": "HWPUNIT"})
+        ET.SubElement(margin_el, _q("hc", "right"), {"value": "0", "unit": "HWPUNIT"})
+        ET.SubElement(margin_el, _q("hc", "prev"), {"value": "0", "unit": "HWPUNIT"})
+        ET.SubElement(margin_el, _q("hc", "next"), {"value": "0", "unit": "HWPUNIT"})
+        ET.SubElement(
+            para,
+            _q("hh", "lineSpacing"),
+            {"type": "PERCENT", "value": str(line_spacing_value), "unit": "PERCENT"},
+        )
+        ET.SubElement(
+            para,
+            _q("hh", "border"),
+            {
+                "borderFillIDRef": "1",
+                "offsetLeft": "0",
+                "offsetRight": "0",
+                "offsetTop": "0",
+                "offsetBottom": "0",
+                "connect": "0",
+                "ignoreMargin": "0",
+            },
+        )
+
+    # 0: 기본 바탕글
+    add_para_pr(0, "JUSTIFY", 160)
+    # 1: TITLE (130%)
+    add_para_pr(1, "CENTER", 130)
+    # 2: SUBTITLE (160%)
+    add_para_pr(2, "LEFT", 160)
+    # 3: BODY (160%)
+    add_para_pr(3, "LEFT", 160)
+    # 4: DESC2 (160%)
+    add_para_pr(4, "LEFT", 160)
+    # 5: DESC3 (160%)
+    add_para_pr(5, "LEFT", 160)
+    # 6: EMPHASIS (130%)
+    add_para_pr(6, "CENTER", 130)
+    # Spacer paragraphs (줄간격 100%)
+    add_para_pr(20, "LEFT", 100)  # subtitle spacer
+    add_para_pr(21, "LEFT", 100)  # body spacer
+    add_para_pr(22, "LEFT", 100)  # desc2 spacer
+    add_para_pr(23, "LEFT", 100)  # desc3 spacer
+    para_props.set("itemCnt", "10")
+
+    # numberings: 번호 매기기 정의 (참조 파일 기준)
+    numberings = ET.SubElement(ref_list, _q("hh", "numberings"), {"itemCnt": "1"})
+    numbering = ET.SubElement(numberings, _q("hh", "numbering"), {"id": "1", "start": "0"})
+
+    # 10개 레벨의 paraHead 추가
+    levels = [
+        {"level": "1", "numFormat": "DIGIT", "text": "^1."},
+        {"level": "2", "numFormat": "HANGUL_SYLLABLE", "text": "^2."},
+        {"level": "3", "numFormat": "DIGIT", "text": "^3)"},
+        {"level": "4", "numFormat": "HANGUL_SYLLABLE", "text": "^4)"},
+        {"level": "5", "numFormat": "DIGIT", "text": "(^5)"},
+        {"level": "6", "numFormat": "HANGUL_SYLLABLE", "text": "(^6)"},
+        {"level": "7", "numFormat": "CIRCLED_DIGIT", "checkable": "1", "text": "^7"},
+        {"level": "8", "numFormat": "CIRCLED_HANGUL_SYLLABLE", "checkable": "1", "text": "^8"},
+        {"level": "9", "numFormat": "HANGUL_JAMO", "text": ""},
+        {"level": "10", "numFormat": "ROMAN_SMALL", "checkable": "1", "text": ""},
+    ]
+
+    for lvl in levels:
+        attrs = {
+            "start": "1",
+            "level": lvl["level"],
+            "align": "LEFT",
+            "useInstWidth": "1",
+            "autoIndent": "1",
+            "widthAdjust": "0",
+            "textOffsetType": "PERCENT",
+            "textOffset": "50",
+            "numFormat": lvl["numFormat"],
+            "charPrIDRef": "4294967295",
+            "checkable": lvl.get("checkable", "0"),
+        }
+        para_head = ET.SubElement(numbering, _q("hh", "paraHead"), attrs)
+        para_head.text = lvl["text"]
+
+    # styles: BlockType별 문단 스타일 정의
+    styles = ET.SubElement(ref_list, _q("hh", "styles"), {"itemCnt": "0"})
+
+    def add_style(style_id: int, name: str, eng_name: str, para_ref: int, char_ref: int) -> None:
+        ET.SubElement(
+            styles,
+            _q("hh", "style"),
+            {
+                "id": str(style_id),
+                "type": "PARA",
+                "name": name,
+                "engName": eng_name,
+                "paraPrIDRef": str(para_ref),
+                "charPrIDRef": str(char_ref),
+                "nextStyleIDRef": str(style_id),
+                "langID": "1042",
+                "lockForm": "0",
+            },
+        )
+
+    add_style(0, "바탕글", "Normal", 0, 0)
+    add_style(1, "주제목", "MainTitle", 1, 1)
+    add_style(2, "소제목", "SubTitle", 2, 2)
+    add_style(3, "본문", "Body", 3, 3)
+    add_style(4, "설명2", "Desc2", 4, 4)
+    add_style(5, "설명3", "Desc3", 5, 5)
+    add_style(6, "강조", "Emphasis", 6, 6)
+    styles.set("itemCnt", "7")
+
+    # compatibility / options (한글 구현 관행에 맞춤)
+    compatible = ET.SubElement(head, _q("hh", "compatibleDocument"), {"targetProgram": "HWP201X"})
+    ET.SubElement(compatible, _q("hh", "layoutCompatibility"))
+
+    doc_option = ET.SubElement(head, _q("hh", "docOption"))
     ET.SubElement(
-        para0,
-        _q("hh", "breakSetting"),
-        {
-            "breakLatinWord": "KEEP_WORD",
-            "breakNonLatinWord": "KEEP_WORD",
-            "widowOrphan": "0",
-            "keepWithNext": "0",
-            "keepLines": "0",
-            "pageBreakBefore": "0",
-            "lineWrap": "BREAK",
-        },
-    )
-    ET.SubElement(para0, _q("hh", "autoSpacing"), {"eAsianEng": "0", "eAsianNum": "0"})
-    # margin + lineSpacing: 기본 160% 한 줄 간격
-    margin = ET.SubElement(para0, _q("hh", "margin"))
-    ET.SubElement(margin, _q("hc", "intent"), {"value": "0", "unit": "HWPUNIT"})
-    ET.SubElement(margin, _q("hc", "left"), {"value": "0", "unit": "HWPUNIT"})
-    ET.SubElement(margin, _q("hc", "right"), {"value": "0", "unit": "HWPUNIT"})
-    ET.SubElement(margin, _q("hc", "prev"), {"value": "0", "unit": "HWPUNIT"})
-    ET.SubElement(margin, _q("hc", "next"), {"value": "0", "unit": "HWPUNIT"})
-    ET.SubElement(para0, _q("hh", "lineSpacing"), {"type": "PERCENT", "value": "160", "unit": "HWPUNIT"})
-    ET.SubElement(
-        para0,
-        _q("hh", "border"),
-        {
-            "borderFillIDRef": "1",
-            "offsetLeft": "0",
-            "offsetRight": "0",
-            "offsetTop": "0",
-            "offsetBottom": "0",
-            "connect": "0",
-            "ignoreMargin": "0",
-        },
+        doc_option,
+        _q("hh", "linkinfo"),
+        {"path": "", "pageInherit": "0", "footnoteInherit": "0"},
     )
 
-    # styles: 바탕글 하나 (id 0)
-    styles = ET.SubElement(ref_list, _q("hh", "styles"), {"itemCnt": "1"})
-    ET.SubElement(
-        styles,
-        _q("hh", "style"),
-        {
-            "id": "0",
-            "type": "PARA",
-            "name": "바탕글",
-            "engName": "Normal",
-            "paraPrIDRef": "0",
-            "charPrIDRef": "0",
-            "nextStyleIDRef": "0",
-            "langID": "1042",
-            "lockForm": "0",
-        },
-    )
+    ET.SubElement(head, _q("hh", "trackchageConfig"), {"flags": "56"})
 
     return ET.tostring(head, encoding="utf-8", xml_declaration=True)
 
@@ -399,23 +627,50 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
     if not text_blocks:
         text_blocks = [Block(BlockType.PLAIN, "", "테스트입니다")]  # fallback
 
-    for idx, block in enumerate(text_blocks):
+    p_id = 0
+    secpr_attached = False
+
+    for block in text_blocks:
+        # 1) 필요하면 spacer 문단 추가
+        spacer_para_id = SPACER_PARA_MAP.get(block.type)
+        spacer_char_id = SPACER_CHAR_MAP.get(block.type)
+        if spacer_para_id is not None and spacer_char_id is not None:
+            p = ET.SubElement(
+                root,
+                _q("hp", "p"),
+                {
+                    "id": str(p_id),
+                    "paraPrIDRef": spacer_para_id,
+                    "styleIDRef": "0",
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0",
+                },
+            )
+            # spacer에는 secPr를 붙이지 않는다
+            run_sp = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": spacer_char_id})
+            t_sp = ET.SubElement(run_sp, _q("hp", "t"))
+            t_sp.text = " "
+            p_id += 1
+
+        # 2) 실제 내용 문단
         para_id = PARA_STYLE_MAP.get(block.type, "0")
+        style_id = STYLE_ID_MAP.get(block.type, "0")
         p = ET.SubElement(
             root,
             _q("hp", "p"),
             {
-                "id": str(idx),
+                "id": str(p_id),
                 "paraPrIDRef": para_id,
-                "styleIDRef": "0",
+                "styleIDRef": style_id,
                 "pageBreak": "0",
                 "columnBreak": "0",
                 "merged": "0",
             },
         )
 
-        # 첫 문단에만 secPr/페이지 설정 포함
-        if idx == 0:
+        # 첫 실제 문단에만 secPr/페이지 설정 포함
+        if not secpr_attached:
             char_id_for_sec = CHAR_STYLE_MAP.get(block.type, "0")
             run_sec = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": char_id_for_sec})
             sec_pr = ET.SubElement(
@@ -464,31 +719,52 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
                 _q("hp", "pagePr"),
                 {"landscape": "WIDELY", "width": "59528", "height": "84186", "gutterType": "LEFT_ONLY"},
             )
+            # 페이지 여백: PHASE1_INPUT_FORMAT (A4, 위/아래 15mm, 좌/우 20mm, 머리말/꼬리말 10mm)
+            # test_inputmodel.hwpx의 수치를 그대로 사용
             ET.SubElement(
                 page_pr,
                 _q("hp", "margin"),
                 {
-                    "header": "4252",
-                    "footer": "4252",
+                    "header": "2834",
+                    "footer": "2834",
                     "gutter": "0",
-                    "left": "8504",
-                    "right": "8504",
-                    "top": "5668",
+                    "left": "5669",
+                    "right": "5669",
+                    "top": "4251",
                     "bottom": "4252",
                 },
             )
+            secpr_attached = True
 
         # 실제 텍스트 run
         char_id = CHAR_STYLE_MAP.get(block.type, "0")
         run = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": char_id})
         t = ET.SubElement(run, _q("hp", "t"))
-        t.text = block.text
+
+        # BlockType에 따라 머리 기호 복원
+        if block.type == BlockType.SUBTITLE:
+            t.text = f"□ {block.text}"
+        elif block.type == BlockType.BODY:
+            t.text = f"◦ {block.text}"
+        elif block.type == BlockType.DESC2:
+            t.text = f"   - {block.text}"
+        elif block.type == BlockType.DESC3:
+            t.text = f"    * {block.text}"
+        elif block.type == BlockType.EMPHASIS:
+            t.text = f"◈ {block.text}"
+        else:
+            t.text = block.text
+
+        p_id += 1
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def build_content_hpf(title: str) -> bytes:
-    """Build minimal Contents/content.hpf (opf:package)."""
+    """Build Contents/content.hpf (opf:package) with manifest and spine.
+
+    Based on test_inputmodel.hwpx structure.
+    """
 
     root = ET.Element(
         _q("opf", "package"),
@@ -499,28 +775,54 @@ def build_content_hpf(title: str) -> bytes:
         },
     )
 
+    # Add all necessary namespaces
+    for prefix, uri in NS.items():
+        root.set(f"xmlns:{prefix}", uri)
+
+    # Metadata
     metadata = ET.SubElement(root, _q("opf", "metadata"))
     title_el = ET.SubElement(metadata, _q("opf", "title"))
     title_el.text = title or "Untitled"
     lang_el = ET.SubElement(metadata, _q("opf", "language"))
     lang_el.text = "ko"
 
+    # Manifest - list all content files
     manifest = ET.SubElement(root, _q("opf", "manifest"))
+    ET.SubElement(
+        manifest,
+        _q("opf", "item"),
+        {"id": "header", "href": "Contents/header.xml", "media-type": "application/xml"},
+    )
     ET.SubElement(
         manifest,
         _q("opf", "item"),
         {"id": "section0", "href": "Contents/section0.xml", "media-type": "application/xml"},
     )
+    ET.SubElement(
+        manifest,
+        _q("opf", "item"),
+        {"id": "settings", "href": "settings.xml", "media-type": "application/xml"},
+    )
+
+    # Spine - define reading order (required by Hangul)
+    spine = ET.SubElement(root, _q("opf", "spine"))
+    ET.SubElement(spine, _q("opf", "itemref"), {"idref": "header", "linear": "yes"})
+    ET.SubElement(spine, _q("opf", "itemref"), {"idref": "section0", "linear": "yes"})
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def build_container_xml() -> bytes:
-    """Build META-INF/container.xml pointing to Contents/content.hpf."""
+    """Build META-INF/container.xml pointing to Contents/content.hpf and container.rdf.
+
+    Based on test_inputmodel.hwpx structure.
+    """
 
     root = ET.Element(_q("ocf", "container"))
     root.set("xmlns:hpf", NS["hpf"])
     rootfiles = ET.SubElement(root, _q("ocf", "rootfiles"))
+
+    # Main content file
     ET.SubElement(
         rootfiles,
         _q("ocf", "rootfile"),
@@ -529,11 +831,25 @@ def build_container_xml() -> bytes:
             "media-type": "application/hwpml-package+xml",
         },
     )
+
+    # RDF metadata (required by Hangul)
+    ET.SubElement(
+        rootfiles,
+        _q("ocf", "rootfile"),
+        {
+            "full-path": "META-INF/container.rdf",
+            "media-type": "application/rdf+xml",
+        },
+    )
+
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def build_version_xml() -> bytes:
-    """Build a minimal version.xml (HCFVersion)."""
+    """Build version.xml (HCFVersion) with all required attributes.
+
+    Based on test_inputmodel.hwpx structure.
+    """
 
     hv_ns = "http://www.hancom.co.kr/hwpml/2011/version"
     root = ET.Element(
@@ -541,7 +857,13 @@ def build_version_xml() -> bytes:
         {
             "tagetApplication": "WORDPROCESSOR",
             "major": "5",
-            "minor": "0",
+            "minor": "1",
+            "micro": "0",
+            "buildNumber": "1",
+            "os": "1",
+            "xmlVersion": "1.4",
+            "application": "Hancom Office Hangul",
+            "appVersion": "11, 0, 0, 8808 WIN32LEWindows_10",
         },
     )
     root.set("xmlns:hv", hv_ns)
@@ -549,14 +871,83 @@ def build_version_xml() -> bytes:
 
 
 def build_settings_xml() -> bytes:
-    """Build a minimal settings.xml stub.
+    """Build settings.xml with CaretPosition.
 
-    For now, we generate a tiny valid shell; details can be filled later
-    if Hangul requires them for advanced behavior.
+    Based on test_inputmodel.hwpx structure.
     """
 
     root = ET.Element(_q("ha", "HWPApplicationSetting"))
     root.set("xmlns:config", "urn:oasis:names:tc:opendocument:xmlns:config:1.0")
+
+    # Add caret position (required by Hangul)
+    ET.SubElement(
+        root,
+        _q("ha", "CaretPosition"),
+        {"listIDRef": "0", "paraIDRef": "0", "pos": "0"},
+    )
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def build_manifest_xml() -> bytes:
+    """Build META-INF/manifest.xml (ODF manifest structure).
+
+    Based on test_inputmodel.hwpx structure.
+    Required by Hangul for package validation.
+    """
+
+    odf_ns = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
+    root = ET.Element(f"{{{odf_ns}}}manifest")
+    root.set("xmlns:odf", odf_ns)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def build_container_rdf() -> bytes:
+    """Build META-INF/container.rdf (RDF metadata linking document parts).
+
+    Based on test_inputmodel.hwpx structure.
+    Required by Hangul for proper document structure recognition.
+    """
+
+    rdf_ns = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    pkg_ns = "http://www.hancom.co.kr/hwpml/2016/meta/pkg#"
+
+    root = ET.Element(f"{{{rdf_ns}}}RDF")
+    root.set("xmlns:rdf", rdf_ns)
+
+    # Document root description
+    desc_root = ET.SubElement(root, f"{{{rdf_ns}}}Description", {"rdf:about": ""})
+    ET.SubElement(desc_root, f"{{{pkg_ns}}}hasPart", {
+        "xmlns:ns0": pkg_ns,
+        "rdf:resource": "Contents/header.xml"
+    })
+
+    # Header file description
+    desc_header = ET.SubElement(root, f"{{{rdf_ns}}}Description", {"rdf:about": "Contents/header.xml"})
+    ET.SubElement(desc_header, f"{{{rdf_ns}}}type", {
+        "rdf:resource": f"{pkg_ns}HeaderFile"
+    })
+
+    # Document root has section
+    desc_root2 = ET.SubElement(root, f"{{{rdf_ns}}}Description", {"rdf:about": ""})
+    ET.SubElement(desc_root2, f"{{{pkg_ns}}}hasPart", {
+        "xmlns:ns0": pkg_ns,
+        "rdf:resource": "Contents/section0.xml"
+    })
+
+    # Section file description
+    desc_section = ET.SubElement(root, f"{{{rdf_ns}}}Description", {"rdf:about": "Contents/section0.xml"})
+    ET.SubElement(desc_section, f"{{{rdf_ns}}}type", {
+        "rdf:resource": f"{pkg_ns}SectionFile"
+    })
+
+    # Document type description
+    desc_type = ET.SubElement(root, f"{{{rdf_ns}}}Description", {"rdf:about": ""})
+    ET.SubElement(desc_type, f"{{{rdf_ns}}}type", {
+        "rdf:resource": f"{pkg_ns}Document"
+    })
+
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -566,35 +957,50 @@ def build_settings_xml() -> bytes:
 
 
 def write_hwpx(blocks: List[Block], output_path: Path) -> None:
-    """Write a minimal but more realistic HWPX (ZIP) container.
+    """Write a complete HWPX (ZIP) container with all required files.
 
-    Files we include:
+    Files included (based on test_inputmodel.hwpx structure):
     - mimetype
     - version.xml
     - settings.xml
+    - META-INF/manifest.xml (NEW - required)
     - META-INF/container.xml
-    - Contents/content.hpf
+    - META-INF/container.rdf (NEW - required)
+    - Contents/header.xml
     - Contents/section0.xml
+    - Contents/content.hpf
     """
 
     output_path = output_path.with_suffix(".hwpx")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Build all XML files
+    header_bytes = build_header_xml()
     section0_bytes = build_section0_xml(blocks)
     content_hpf_bytes = build_content_hpf(title=blocks[0].text if blocks else "")
     container_bytes = build_container_xml()
+    container_rdf_bytes = build_container_rdf()
+    manifest_bytes = build_manifest_xml()
     version_bytes = build_version_xml()
     settings_bytes = build_settings_xml()
-    header_bytes = build_header_xml()
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("mimetype", "application/haansofthwp")
+        # mimetype must be first and uncompressed (per OCF spec)
+        zf.writestr("mimetype", "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
+
+        # Version and settings
         zf.writestr("version.xml", version_bytes)
         zf.writestr("settings.xml", settings_bytes)
+
+        # META-INF files (all required)
+        zf.writestr("META-INF/manifest.xml", manifest_bytes)
         zf.writestr("META-INF/container.xml", container_bytes)
-        zf.writestr("Contents/content.hpf", content_hpf_bytes)
-        zf.writestr("Contents/section0.xml", section0_bytes)
+        zf.writestr("META-INF/container.rdf", container_rdf_bytes)
+
+        # Contents files
         zf.writestr("Contents/header.xml", header_bytes)
+        zf.writestr("Contents/section0.xml", section0_bytes)
+        zf.writestr("Contents/content.hpf", content_hpf_bytes)
 
 
 # ---------------------------------------------------------------------------
