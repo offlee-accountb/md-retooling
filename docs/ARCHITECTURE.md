@@ -66,7 +66,8 @@ python tools/spec_search.py "줄간격 line-spacing"
    - 목표: 마크다운 → 한글 문서 변환
    - 조정 가능: 줄간격, 양식, 폰트, 제목 스타일
    - 지속적 개선 필요
-   
+   - 📘 표/레이아웃 레시피는 `docs/LAYOUT_RECIPES.md`에 누적하여 공유
+
 2. **HWPX 검증 툴**
    - HWPX 파일 구조 시각화
    - VS Code에서 확인 가능

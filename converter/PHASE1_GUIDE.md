@@ -47,6 +47,11 @@
    - 역할: 한글이 실제로 생성한 HWPX. **제품이 실제로 허용하는 조합**의 샘플.
    - 활용: `unzip`으로 내부 XML을 확인하면서, 최소 구조와 스타일 패턴을 역추적.
 
+4. **레이아웃 레시피 (Phase1 축적 지식)**
+   - 위치: `docs/LAYOUT_RECIPES.md`
+   - 역할: 주제목·강조 표, spacer 규칙, borderFill/charPr 매핑 등 **재현 가능한 패턴**을 정제해 기록.
+   - 활용: 표나 양식을 새로 만들 때 레시피를 먼저 확인하고 필요 시 업데이트. 다른 에이전트/윈도우 간 경험치 공유 용도.
+
 ### ✅ 전략: 표준 우선 + 예제 참고 + 가이드 보조
 
 - 표준이 최종 기준, 예제와 가이드는 **현실적인 힌트**.
@@ -69,14 +74,15 @@ python tools/spec_search.py "header.xml refList charProperties paraProperties"
 
 ```text
 converter/
-├── md_to_hwpx.py          # Phase1 변환기 메인 (MD → HWPX 스켈레톤)
-├── sample_input.md        # 테스트용 입력 파일
-├── style_textbook.md      # 정부 양식 스타일 정의
-├── PHASE1_INPUT_FORMAT.md # 입력 마크다운 포맷/규칙 정리
-├── PHASE1_GUIDE.md        # 이 문서 (개발 가이드)
-├── hwpxparshingguide.md   # 개발자용 HWPX 파싱/구조 가이드
-├── TROUBLESHOOTING.md     # 해결된 문제 기록
-└── CURRENT_ISSUES.md      # 진행중인 이슈
+├── md_to_hwpx.py           # Phase1 변환기 메인 (MD → HWPX)
+├── sample_input.md         # 테스트용 입력 파일
+├── style_textbook.md       # 정부 양식 스타일 정의
+├── PHASE1_INPUT_FORMAT.md  # 입력 마크다운 포맷/규칙 정리
+├── PHASE1_GUIDE.md         # 이 문서 (개발 가이드)
+├── hwpxparshingguide.md    # 개발자용 HWPX 구조/파싱 가이드
+├── docs/LAYOUT_RECIPES.md  # 표/레이아웃 레시피 모음 (Phase1에서 수집)
+├── TROUBLESHOOTING.md      # 해결된 문제 기록
+└── CURRENT_ISSUES.md       # 진행중인 이슈
 ```
 
 ### `md_to_hwpx.py` 개요
@@ -89,7 +95,7 @@ converter/
     - `META-INF/container.xml`: OCF 컨테이너 정의
     - `version.xml`, `settings.xml` 등 최소 부속 파일
 
-현재는 **paraPr/charPr/style 정의 없이 텍스트만 있는 스켈레톤**이므로, HWP에서 파일이 열리지 않을 수 있다. Phase1의 핵심 과제는 이 구조를 **실제 한글이 열어주는 수준까지** 끌어올리는 것.
+현재 버전은 `header.xml`의 `refList`(fontfaces/charPr/paraPr/styles)와 `section0.xml`의 표/문단 로직이 모두 정의되어 있어 한글에서 바로 열 수 있는 상태이다. 다만 표 구조, 줄간격, charPr ID 운용 같은 **레이아웃 규격**을 바꿀 땐 `docs/LAYOUT_RECIPES.md`에 새 레시피를 추가하고 `md_to_hwpx.py`의 헬퍼 함수(예: `_append_title_table`, `_append_emphasis_table`)를 함께 수정해야 한다. Phase1 이후에도 “표준 유지 + 레시피 확장”을 반복하는 것이 핵심 과제다.
 
 ---
 

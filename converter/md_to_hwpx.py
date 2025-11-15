@@ -95,6 +95,13 @@ MARGIN_RIGHT_MM = 20.0
 MARGIN_HEADER_MM = 10.0
 MARGIN_FOOTER_MM = 10.0
 PAGE_BORDER_OFFSET_MM = 5.0
+TABLE_WIDTH_HWP = "48189"
+TITLE_BODY_HEIGHT_HWP = "3174"
+ONE_PT_HWP = str(int(round((25.4 / 72) * HWPUNITS_PER_MM)))
+TITLE_TABLE_ROW_HEIGHTS = (ONE_PT_HWP, TITLE_BODY_HEIGHT_HWP, ONE_PT_HWP)
+EMPH_TABLE_HEIGHT_HWP = "2632"
+EMPH_TABLE_ROW_HEIGHT = "521"
+TITLE_TABLE_SPACER_CHAR_ID = "9"  # 1pt filler
 
 # StyleID mapping (p@styleIDRef → hh:style@id in header.xml)
 STYLE_ID_MAP = {
@@ -209,6 +216,8 @@ def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
 def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full_text: str) -> None:
     if full_text is None:
         return
+    if not full_text:
+        return
     segments = _split_bold_segments(full_text)
     if not segments:
         segments = [(full_text, False)]
@@ -225,6 +234,408 @@ def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full
         t.text = seg_text
 
 
+def _attach_secpr(run: ET.Element) -> None:
+    sec_pr = ET.SubElement(
+        run,
+        _q("hp", "secPr"),
+        {
+            "id": "",
+            "textDirection": "HORIZONTAL",
+            "spaceColumns": "1134",
+            "tabStop": "8000",
+            "tabStopVal": "4000",
+            "tabStopUnit": "HWPUNIT",
+            "outlineShapeIDRef": "1",
+            "memoShapeIDRef": "0",
+            "textVerticalWidthHead": "0",
+            "masterPageCnt": "0",
+        },
+    )
+    ET.SubElement(sec_pr, _q("hp", "grid"), {"lineGrid": "0", "charGrid": "0", "wonggojiFormat": "0"})
+    ET.SubElement(
+        sec_pr,
+        _q("hp", "startNum"),
+        {"pageStartsOn": "BOTH", "page": "0", "pic": "0", "tbl": "0", "equation": "0"},
+    )
+    ET.SubElement(
+        sec_pr,
+        _q("hp", "visibility"),
+        {
+            "hideFirstHeader": "0",
+            "hideFirstFooter": "0",
+            "hideFirstMasterPage": "0",
+            "border": "SHOW_ALL",
+            "fill": "SHOW_ALL",
+            "hideFirstPageNum": "0",
+            "hideFirstEmptyLine": "0",
+            "showLineNumber": "0",
+        },
+    )
+    ET.SubElement(
+        sec_pr,
+        _q("hp", "lineNumberShape"),
+        {"restartType": "0", "countBy": "0", "distance": "0", "startNumber": "0"},
+    )
+    page_pr = ET.SubElement(
+        sec_pr,
+        _q("hp", "pagePr"),
+        {
+            "landscape": "WIDELY",
+            "width": PAGE_WIDTH_HWP,
+            "height": PAGE_HEIGHT_HWP,
+            "gutterType": "LEFT_ONLY",
+        },
+    )
+    ET.SubElement(
+        page_pr,
+        _q("hp", "margin"),
+        {
+            "header": mm_to_hwp(MARGIN_HEADER_MM),
+            "footer": mm_to_hwp(MARGIN_FOOTER_MM),
+            "gutter": "0",
+            "left": mm_to_hwp(MARGIN_LEFT_MM),
+            "right": mm_to_hwp(MARGIN_RIGHT_MM),
+            "top": mm_to_hwp(MARGIN_TOP_MM),
+            "bottom": mm_to_hwp(MARGIN_BOTTOM_MM),
+        },
+    )
+    footnote_pr = ET.SubElement(sec_pr, _q("hp", "footNotePr"))
+    ET.SubElement(
+        footnote_pr,
+        _q("hp", "autoNumFormat"),
+        {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
+    )
+    ET.SubElement(
+        footnote_pr,
+        _q("hp", "noteLine"),
+        {"length": "-1", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
+    )
+    ET.SubElement(
+        footnote_pr,
+        _q("hp", "noteSpacing"),
+        {"betweenNotes": "283", "belowLine": "567", "aboveLine": "850"},
+    )
+    ET.SubElement(footnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
+    ET.SubElement(
+        footnote_pr,
+        _q("hp", "placement"),
+        {"place": "EACH_COLUMN", "beneathText": "0"},
+    )
+    endnote_pr = ET.SubElement(sec_pr, _q("hp", "endNotePr"))
+    ET.SubElement(
+        endnote_pr,
+        _q("hp", "autoNumFormat"),
+        {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
+    )
+    ET.SubElement(
+        endnote_pr,
+        _q("hp", "noteLine"),
+        {"length": "14692344", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
+    )
+    ET.SubElement(
+        endnote_pr,
+        _q("hp", "noteSpacing"),
+        {"betweenNotes": "0", "belowLine": "567", "aboveLine": "850"},
+    )
+    ET.SubElement(endnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
+    ET.SubElement(
+        endnote_pr,
+        _q("hp", "placement"),
+        {"place": "END_OF_DOCUMENT", "beneathText": "0"},
+    )
+    for border_type in ("BOTH", "EVEN", "ODD"):
+        page_border = ET.SubElement(
+            sec_pr,
+            _q("hp", "pageBorderFill"),
+            {
+                "type": border_type,
+                "borderFillIDRef": "1",
+                "textBorder": "PAPER",
+                "headerInside": "0",
+                "footerInside": "0",
+                "fillArea": "PAPER",
+            },
+        )
+        ET.SubElement(
+            page_border,
+            _q("hp", "offset"),
+            {
+                "left": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                "right": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                "top": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+                "bottom": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
+            },
+        )
+    ctrl = ET.SubElement(run, _q("hp", "ctrl"))
+    ET.SubElement(
+        ctrl,
+        _q("hp", "colPr"),
+        {"id": "", "type": "NEWSPAPER", "layout": "LEFT", "colCount": "1", "sameSz": "1", "sameGap": "0"},
+    )
+
+
+def _create_table_row(
+    tbl: ET.Element,
+    *,
+    row_idx: int,
+    text: str,
+    para_id: str,
+    style_id: str,
+    char_id: str | None,
+    cell_margin: dict,
+    cell_height: str,
+    border_fill: str,
+    has_margin: str,
+    p_id: int,
+    secpr_attached: bool,
+) -> tuple[int, bool]:
+    tr = ET.SubElement(tbl, _q("hp", "tr"))
+    tc = ET.SubElement(
+        tr,
+        _q("hp", "tc"),
+        {
+            "name": "",
+            "header": "0",
+            "hasMargin": has_margin,
+            "protect": "0",
+            "editable": "0",
+            "dirty": "0",
+            "borderFillIDRef": border_fill,
+        },
+    )
+    sub_list = ET.SubElement(
+        tc,
+        _q("hp", "subList"),
+        {
+            "id": "",
+            "textDirection": "HORIZONTAL",
+            "lineWrap": "BREAK",
+            "vertAlign": "CENTER",
+            "linkListIDRef": "0",
+            "linkListNextIDRef": "0",
+            "textWidth": "0",
+            "textHeight": "0",
+            "hasTextRef": "0",
+            "hasNumRef": "0",
+        },
+    )
+    p = ET.SubElement(
+        sub_list,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": para_id,
+            "styleIDRef": style_id,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    _append_text_with_bold(p, char_id, text)
+    ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": str(row_idx)})
+    ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+    ET.SubElement(tc, _q("hp", "cellSz"), {"width": TABLE_WIDTH_HWP, "height": cell_height})
+    ET.SubElement(tc, _q("hp", "cellMargin"), cell_margin)
+    return p_id + 1, secpr_attached
+
+
+def _append_title_table(
+    parent: ET.Element, block: Block, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_wrapper, _q("hp", "run"), {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "1",
+            "rowCnt": "3",
+            "colCnt": "1",
+            "cellSpacing": "0",
+            "borderFillIDRef": "3",
+            "noAdjust": "0",
+        },
+    )
+    total_height = str(int(TITLE_TABLE_ROW_HEIGHTS[0]) + int(TITLE_BODY_HEIGHT_HWP) + int(TITLE_TABLE_ROW_HEIGHTS[2]))
+    ET.SubElement(
+        tbl,
+        _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": total_height, "heightRelTo": "ABSOLUTE", "protect": "0"},
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "510", "right": "510", "top": "141", "bottom": "141"})
+    row_specs = [
+        {
+            "text": " ",
+            "para_id": "0",
+            "style_id": "0",
+            "char_id": TITLE_TABLE_SPACER_CHAR_ID,
+            "cell_margin": {"left": "0", "right": "0", "top": "0", "bottom": "0"},
+            "cell_height": TITLE_TABLE_ROW_HEIGHTS[0],
+            "border_fill": "5",
+            "has_margin": "0",
+        },
+        {
+            "text": block.text,
+            "para_id": PARA_STYLE_MAP[BlockType.TITLE],
+            "style_id": STYLE_ID_MAP[BlockType.TITLE],
+            "char_id": RUN_CHAR_OVERRIDE_MAP[BlockType.TITLE],
+            "cell_margin": {"left": "1417", "right": "1417", "top": "141", "bottom": "141"},
+            "cell_height": TITLE_TABLE_ROW_HEIGHTS[1],
+            "border_fill": "4",
+            "has_margin": "1",
+        },
+        {
+            "text": " ",
+            "para_id": "0",
+            "style_id": "0",
+            "char_id": TITLE_TABLE_SPACER_CHAR_ID,
+            "cell_margin": {"left": "0", "right": "0", "top": "0", "bottom": "0"},
+            "cell_height": TITLE_TABLE_ROW_HEIGHTS[2],
+            "border_fill": "5",
+            "has_margin": "0",
+        },
+    ]
+    for idx, spec in enumerate(row_specs):
+        p_id, secpr_attached = _create_table_row(
+            tbl,
+            row_idx=idx,
+            text=spec["text"],
+            para_id=spec["para_id"],
+            style_id=spec["style_id"],
+            char_id=spec["char_id"],
+            cell_margin=spec["cell_margin"],
+            cell_height=spec["cell_height"],
+            border_fill=spec["border_fill"],
+            has_margin=spec["has_margin"],
+            p_id=p_id,
+            secpr_attached=secpr_attached,
+        )
+    return p_id, table_id + 1, secpr_attached
+
+
+def _append_emphasis_table(
+    parent: ET.Element, block: Block, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_wrapper, _q("hp", "run"), {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "1",
+            "rowCnt": "1",
+            "colCnt": "1",
+            "cellSpacing": "0",
+            "borderFillIDRef": "3",
+            "noAdjust": "0",
+        },
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": EMPH_TABLE_HEIGHT_HWP, "heightRelTo": "ABSOLUTE", "protect": "0"},
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "510", "right": "510", "top": "141", "bottom": "141"})
+    text = f"◈ {block.text}"
+    p_id, secpr_attached = _create_table_row(
+        tbl,
+        row_idx=0,
+        text=text,
+        para_id=PARA_STYLE_MAP[BlockType.EMPHASIS],
+        style_id=STYLE_ID_MAP[BlockType.EMPHASIS],
+        char_id=RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS],
+        cell_margin={"left": "566", "right": "566", "top": "566", "bottom": "566"},
+        cell_height=EMPH_TABLE_ROW_HEIGHT,
+        border_fill="6",
+        has_margin="1",
+        p_id=p_id,
+        secpr_attached=secpr_attached,
+    )
+    return p_id, table_id + 1, secpr_attached
 def mm_to_hwp(mm: float) -> str:
     """Convert millimeters to Hangul internal HWPUNIT."""
 
@@ -344,41 +755,38 @@ def build_header_xml() -> bytes:
         add_fontface(lang)
 
     # borderFills: 최소 2개 필요 (참조 파일 기준)
-    border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "2"})
+    border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "0"})
 
-    # borderFill id="1" - 기본
-    bf1 = ET.SubElement(border_fills, _q("hh", "borderFill"), {
-        "id": "1",
-        "threeD": "0",
-        "shadow": "0",
-        "centerLine": "NONE",
-        "breakCellSeparateLine": "0",
-    })
-    ET.SubElement(bf1, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-    ET.SubElement(bf1, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-    ET.SubElement(bf1, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf1, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf1, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf1, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf1, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
+    def add_border_fill(bf_id: int, *, fill_brush: dict | None = None) -> None:
+        bf = ET.SubElement(
+            border_fills,
+            _q("hh", "borderFill"),
+            {
+                "id": str(bf_id),
+                "threeD": "0",
+                "shadow": "0",
+                "centerLine": "NONE",
+                "breakCellSeparateLine": "0",
+            },
+        )
+        ET.SubElement(bf, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+        ET.SubElement(bf, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+        ET.SubElement(bf, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+        ET.SubElement(bf, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+        ET.SubElement(bf, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+        ET.SubElement(bf, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
+        ET.SubElement(bf, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
+        if fill_brush is not None:
+            brush = ET.SubElement(bf, _q("hc", "fillBrush"))
+            ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
 
-    # borderFill id="2" - fillBrush 포함
-    bf2 = ET.SubElement(border_fills, _q("hh", "borderFill"), {
-        "id": "2",
-        "threeD": "0",
-        "shadow": "0",
-        "centerLine": "NONE",
-        "breakCellSeparateLine": "0",
-    })
-    ET.SubElement(bf2, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-    ET.SubElement(bf2, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-    ET.SubElement(bf2, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf2, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf2, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf2, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-    ET.SubElement(bf2, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
-    fillBrush = ET.SubElement(bf2, _q("hc", "fillBrush"))
-    ET.SubElement(fillBrush, _q("hc", "winBrush"), {"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
+    add_border_fill(1)
+    add_border_fill(2, fill_brush={"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
+    add_border_fill(3)
+    add_border_fill(4)
+    add_border_fill(5, fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"})
+    add_border_fill(6, fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"})
+    border_fills.set("itemCnt", "6")
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
@@ -479,18 +887,16 @@ def build_header_xml() -> bytes:
             ET.SubElement(char, _q("hh", "bold"))
 
     char_defs = [
-        # Base/body text (휴먼명조 15pt) lives at ID 0 so the 바탕글 fallback is safe.
-        (0, 1500, 1, False),
-        # Spacer charPr (line-height 확보용, Hangul-safe IDs 1~4)
-        (1, 1000, 2, False),   # 소제목 spacer 맑은고딕 10pt
-        (2, 800, 2, False),    # 본문 spacer 맑은고딕 8pt
-        (3, 600, 2, False),    # 설명2 spacer 맑은고딕 6pt
-        (4, 400, 2, False),    # 설명3 spacer 맑은고딕 4pt
-        # 본문 계열 스타일 (ID ≤ 8만 사용)
+        (0, 1500, 1, False),   # 본문 휴먼명조 15pt
+        (1, 1000, 2, False),   # spacer 10pt
+        (2, 800, 2, False),    # spacer 8pt
+        (3, 600, 2, False),    # spacer 6pt
+        (4, 400, 2, False),    # spacer 4pt
         (5, 1500, 0, True),    # 주제목 HY 15pt Bold
         (6, 1500, 0, False),   # 소제목 HY 15pt
         (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
         (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
+        (9, 100, 2, False),    # 1pt filler
     ]
     for cid, height, font_id, is_bold in char_defs:
         add_char_pr(cid, height, font_id, bold=is_bold)
@@ -716,6 +1122,7 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
 
     p_id = 0
     secpr_attached = False
+    table_id = 0
 
     for block in text_blocks:
         # 1) 필요하면 spacer 문단 추가
@@ -740,6 +1147,17 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
             t_sp.text = spacer_marker
             p_id += 1
 
+        if block.type == BlockType.TITLE:
+            p_id, table_id, secpr_attached = _append_title_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+        if block.type == BlockType.EMPHASIS:
+            p_id, table_id, secpr_attached = _append_emphasis_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+
         # 2) 실제 내용 문단
         para_id = PARA_STYLE_MAP.get(block.type, "0")
         style_id = STYLE_ID_MAP.get(block.type, "0")
@@ -763,144 +1181,7 @@ def build_section0_xml(blocks: List[Block]) -> bytes:
             if char_id_for_sec is not None:
                 run_sec_attrs["charPrIDRef"] = char_id_for_sec
             run_sec = ET.SubElement(p, _q("hp", "run"), run_sec_attrs)
-            sec_pr = ET.SubElement(
-                run_sec,
-                _q("hp", "secPr"),
-                {
-                    "id": "",
-                    "textDirection": "HORIZONTAL",
-                    "spaceColumns": "1134",
-                    "tabStop": "8000",
-                    "tabStopVal": "4000",
-                    "tabStopUnit": "HWPUNIT",
-                    "outlineShapeIDRef": "1",
-                    "memoShapeIDRef": "0",
-                    "textVerticalWidthHead": "0",
-                    "masterPageCnt": "0",
-                },
-            )
-            ET.SubElement(sec_pr, _q("hp", "grid"), {"lineGrid": "0", "charGrid": "0", "wonggojiFormat": "0"})
-            ET.SubElement(
-                sec_pr,
-                _q("hp", "startNum"),
-                {"pageStartsOn": "BOTH", "page": "0", "pic": "0", "tbl": "0", "equation": "0"},
-            )
-            ET.SubElement(
-                sec_pr,
-                _q("hp", "visibility"),
-                {
-                    "hideFirstHeader": "0",
-                    "hideFirstFooter": "0",
-                    "hideFirstMasterPage": "0",
-                    "border": "SHOW_ALL",
-                    "fill": "SHOW_ALL",
-                    "hideFirstPageNum": "0",
-                    "hideFirstEmptyLine": "0",
-                    "showLineNumber": "0",
-                },
-            )
-            ET.SubElement(
-                sec_pr,
-                _q("hp", "lineNumberShape"),
-                {"restartType": "0", "countBy": "0", "distance": "0", "startNumber": "0"},
-            )
-            page_pr = ET.SubElement(
-                sec_pr,
-                _q("hp", "pagePr"),
-                {
-                    "landscape": "WIDELY",
-                    "width": PAGE_WIDTH_HWP,
-                    "height": PAGE_HEIGHT_HWP,
-                    "gutterType": "LEFT_ONLY",
-                },
-            )
-            # 페이지 여백: style_textbook 명세 (A4 세로, 좌우 20mm, 상하 15mm, 머리말/꼬리말 10mm)
-            ET.SubElement(
-                page_pr,
-                _q("hp", "margin"),
-                {
-                    "header": mm_to_hwp(MARGIN_HEADER_MM),
-                    "footer": mm_to_hwp(MARGIN_FOOTER_MM),
-                    "gutter": "0",
-                    "left": mm_to_hwp(MARGIN_LEFT_MM),
-                    "right": mm_to_hwp(MARGIN_RIGHT_MM),
-                    "top": mm_to_hwp(MARGIN_TOP_MM),
-                    "bottom": mm_to_hwp(MARGIN_BOTTOM_MM),
-                },
-            )
-            footnote_pr = ET.SubElement(sec_pr, _q("hp", "footNotePr"))
-            ET.SubElement(
-                footnote_pr,
-                _q("hp", "autoNumFormat"),
-                {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
-            )
-            ET.SubElement(
-                footnote_pr,
-                _q("hp", "noteLine"),
-                {"length": "-1", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
-            )
-            ET.SubElement(
-                footnote_pr,
-                _q("hp", "noteSpacing"),
-                {"betweenNotes": "283", "belowLine": "567", "aboveLine": "850"},
-            )
-            ET.SubElement(footnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
-            ET.SubElement(
-                footnote_pr,
-                _q("hp", "placement"),
-                {"place": "EACH_COLUMN", "beneathText": "0"},
-            )
-            endnote_pr = ET.SubElement(sec_pr, _q("hp", "endNotePr"))
-            ET.SubElement(
-                endnote_pr,
-                _q("hp", "autoNumFormat"),
-                {"type": "DIGIT", "userChar": "", "prefixChar": "", "suffixChar": ")", "supsript": "0"},
-            )
-            ET.SubElement(
-                endnote_pr,
-                _q("hp", "noteLine"),
-                {"length": "14692344", "type": "SOLID", "width": "0.12 mm", "color": "#000000"},
-            )
-            ET.SubElement(
-                endnote_pr,
-                _q("hp", "noteSpacing"),
-                {"betweenNotes": "0", "belowLine": "567", "aboveLine": "850"},
-            )
-            ET.SubElement(endnote_pr, _q("hp", "numbering"), {"type": "CONTINUOUS", "newNum": "1"})
-            ET.SubElement(
-                endnote_pr,
-                _q("hp", "placement"),
-                {"place": "END_OF_DOCUMENT", "beneathText": "0"},
-            )
-            for border_type in ("BOTH", "EVEN", "ODD"):
-                page_border = ET.SubElement(
-                    sec_pr,
-                    _q("hp", "pageBorderFill"),
-                    {
-                        "type": border_type,
-                        "borderFillIDRef": "1",
-                        "textBorder": "PAPER",
-                        "headerInside": "0",
-                        "footerInside": "0",
-                        "fillArea": "PAPER",
-                    },
-                )
-                ET.SubElement(
-                    page_border,
-                    _q("hp", "offset"),
-                    {
-                        "left": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
-                        "right": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
-                        "top": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
-                        "bottom": mm_to_hwp(PAGE_BORDER_OFFSET_MM),
-                    },
-                )
-            ctrl = ET.SubElement(run_sec, _q("hp", "ctrl"))
-            ET.SubElement(
-                ctrl,
-                _q("hp", "colPr"),
-                {"id": "", "type": "NEWSPAPER", "layout": "LEFT", "colCount": "1", "sameSz": "1", "sameGap": "0"},
-            )
+            _attach_secpr(run_sec)
             secpr_attached = True
 
         # 실제 텍스트 run (inline bold 지원)
