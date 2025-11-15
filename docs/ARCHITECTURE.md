@@ -18,8 +18,8 @@
 ```
 tools/
 ├── spec_search.py      # 검색 메인 로직
-├── chunk_builder.py    # 스펩 문서 분할
-└── chunks/             # 분할된 데이터 저장
+├── chunk_builder.py    # 스펙 문서 분할
+└── chunks/             # 분할된 데이터 저장 (*.jsonl)
 ```
 
 **사용 예시:**
@@ -58,8 +58,8 @@ python tools/spec_search.py "줄간격 line-spacing"
 ## MVP 개발 우선순위
 
 ### Phase 0: 개발 환경 (선행 필수)
-- HWPX 스펙 검색 시스템
-- 코딩 에이전트가 표준 문서 참조 가능하게
+- ✅ HWPX 스펙 검색 시스템 설계 완료
+- 🚧 구현 대기중 (코딩 에이전트가 표준 문서 참조 가능하게)
 
 ### Phase 1: 핵심 변환 엔진 (최우선)
 1. **MD → HWPX 변환기**
@@ -299,12 +299,13 @@ document-automation/
 ├── tools/                  # Phase 0
 │   ├── spec_search.py     # HWPX 스펙 검색
 │   ├── chunk_builder.py   # 문서 분할
-│   └── chunks/            # 분할된 스펙 데이터
+│   └── chunks/            # 분할된 스펙 데이터 (*.jsonl, Phase 0 완료 시 생성)
 │
 ├── converter/              # Phase 1
 │   ├── md_parser.py
 │   ├── hwpx_generator.py
-│   └── styles.py
+│   ├── styles.py
+│   └── PHASE1_GUIDE.md        # Phase 1 변환 상세 가이드 (예정)
 │
 ├── validator/              # Phase 1
 │   ├── hwpx_reader.py
@@ -407,21 +408,44 @@ document-automation/
 - XML 직접 생성 방식 채택
 
 ## 참고 자료
-- `docs/hwpx_spec.md` - HWPX 표준 통합본(원문 전체 포함, 고유 앵커/Global Index 포함)
-- `docs/hwpx_spec.index.json` - 섹션 청킹 메타(라인/문자 오프셋, 원본 파일 매핑)
-- `docs/hwpx_terms.alias.json` - 용어 동의어 사전(KR/EN/스키마명 → 대표 앵커)
+
+### 전체 문서
+- `docs/hwpx_spec.md` - 국가 표준 HWPX 문서 (40만자)
+- `docs/AI_COLLABORATION_GUIDE.md` - AI 협업 규칙 및 인수인계 프로토콜
 - RAG 검색 시스템을 통해 필요 부분만 참조
+
+### Phase별 상세 가이드
+각 Phase는 상세 구현 가이드를 별도 문서로 관리:
+- **Phase 0:** `tools/` 폴더 내 README (완료 시 작성 예정)
+- **Phase 1:** `converter/PHASE1_GUIDE.md` - 변환 규칙, 예시 파일 (작성 예정)
+
+**원칙:**
+- ARCHITECTURE.md는 전체 흐름만
+- 상세 구현은 Phase별 가이드에
+- 토큰 절약 + 필요할 때만 읽기
 
 ## AI 협업 및 파일 관리
 
+### AI 작업 시작 전 필수 읽기
+1. **ARCHITECTURE.md** (이 문서) - 시스템 전체 설계
+2. **RECENT_CHANGES.md** - 최근 5-10개 변경사항
+3. **AI_COLLABORATION_GUIDE.md** - 협업 규칙 및 프로토콜
+4. **FULL_CHANGELOG.md** - Phase별 이력 (필요시)
+
 ### 변경 이력 관리
 - `docs/RECENT_CHANGES.md` - 최근 5-10개 변경사항 (AI가 매번 참조)
-- `docs/FULL_CHANGELOG.md` - 전체 변경 이력 (필요시 참조)
+- `docs/FULL_CHANGELOG.md` - Phase별 전체 변경 이력 (필요시 참조)
 
 **운영 방식:**
-- 작업 완료 후 RECENT_CHANGES.md 업데이트
+- 작업 완료 후 RECENT_CHANGES.md 업데이트 필수
 - 10개 초과 시 오래된 항목은 FULL_CHANGELOG.md로 이동
 - AI 작업 시작 전 RECENT_CHANGES.md 필수 확인
+- Phase 완료 시 FULL_CHANGELOG.md 동기화
+
+**AI 인수인계:**
+- 상세 프로토콜은 `AI_COLLABORATION_GUIDE.md` 참조
+- Phase 전환 시 주요 API, 참고사항 문서화 필수
+- 새 모듈 완성 시 README.md 작성
 
 ### 파일 관리 규칙
 
