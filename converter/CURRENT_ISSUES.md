@@ -46,6 +46,32 @@
 
 ## 진행중인 이슈
 
+## [진행중] Phase1.5 Validator가 실제 문서와 불일치 리포트 다수 발생
+
+**우선순위:** High  
+**담당 AI:** GitHub Copilot (2025-11-16)
+
+### 상황
+- `validator/cli.py templates/phase1_5_sample.yaml output/test_final.hwpx --format text` 실행 시 7개의 ERROR가 연속적으로 발생.
+- 증상: YAML 템플릿은 8개 미만 블록(제목/메타 표/요약/불릿/노트/결재 표/서명)을 기대하나, 실제 `output/test_final.hwpx`는 Phase1 변환기의 기본 보고서 텍스트라 구조가 완전히 다름.
+- 현재 validator 로직은 table/list/text 순서를 엄격 비교하기 때문에 실제 문서가 기대 템플릿과 다르면 모든 블록이 실패 처리됨.
+
+### 시도한 방법들
+1. [Copilot - 11/16] Phase1.5 validator 코어 구현 (`validator/phase1_5_validator.py`) 및 CLI 연동 → 정상적으로 HWPX를 열어 diff 출력하지만, 템플릿과 내용이 달라 모든 블록이 실패됨.
+2. [Copilot - 11/16] section0.xml 파싱 시 중복 namespace 제거 및 spacer 문단 건너뛰기 로직 추가 → XML 파싱 오류 해결, 텍스트/테이블 비교까지 수행됨.
+
+### 다음 AI에게
+- 템플릿을 실제 Phase1 출력과 맞춰 업데이트하거나, validator에서 BlockType 매핑(예: 제목 테이블 → 실제 표 구조) 규칙을 도입해야 함.
+- HWPX 문서 파싱 시 paraPrIDRef/charPrIDRef 기반으로 BlockType을 추정하는 로직이 아직 없음. 이를 도입하면 템플릿에 현재 BlockType 대신 스타일 기준 규칙을 쓸 수 있음.
+- 리스트(`bullet_section`)는 현재 “marker로 시작하는 연속 문단”만 감지하므로, Phase1 출력에 맞춰 marker/정규식 조건을 재설계 필요.
+- 참고 파일: `validator/phase1_5_validator.py`, `templates/phase1_5_sample.yaml`, `output/test_final.hwpx`.
+
+### 관련 파일
+- `validator/phase1_5_validator.py`
+- `validator/cli.py`
+- `templates/phase1_5_sample.yaml`
+- `output/test_final.hwpx`
+
 ## [해결됨] Spacer 줄(라인스페이서) 폰트/크기 미스매치
 
 **우선순위:** Medium  

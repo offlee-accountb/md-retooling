@@ -74,6 +74,29 @@ python tools/spec_search.py "줄간격 line-spacing"
    - 주석/설명 자동 추가
    - 실시간 피드백
 
+### Phase 1.5: YAML 기반 검증 자동화 (Option B)
+- YAML 스키마(최대 8개 필드)를 단일 소스로 사용하여 변환기/검증기의 기대 출력 정의
+- 변환기 직후 `validator/` 파이프라인이 YAML을 파싱하여 HWPX 구조를 점검하고 차이(diff) 리포트 생성
+- Phase 1 코드 재사용 + 경량 CLI/VSCode 워크플로우 구축 → LLM 없이도 즉시 품질 확인
+- 산출물: `converter/PHASE1_5_GUIDE.md`, `templates/*.yaml`, 검증 리포트 예시
+- Tier별 호환성 추적과 실행 로그는 `docs/phase1.5_tiers.md` 및 `validator/tier_test/tier0~tier3/`에만 저장하여 Option B 작업을 모듈형으로 보관/폐기할 수 있게 한다.
+
+**데이터 흐름 (Phase 1.5):**
+```
+[입력 Markdown]
+     ↓
+[MD → HWPX 변환]
+     ↓                         ↘
+[HWPX 결과물] ——> [YAML 스키마] ——> [Validator CLI] ——> [Diff/리포트]
+                                         ↘
+                                [샘플 데이터 (tests/fixtures)]
+```
+
+**역할 분담:**
+- YAML 저자: 제출 서식의 필수 요소/순서/스타일을 스키마로 정의
+- 변환기 담당: 스키마에 맞춘 HWPX 생성·스타일 조정
+- 검증기 담당: 스키마 vs 실제 HWPX 비교, 실패 시 디버그 지표 출력
+
 ### Phase 2: 자동화 (장기)
 3. **LLM API 연동**
    - Claude/GPT API 연동
@@ -146,7 +169,7 @@ def convert_md_to_hwpx(
     "font": "맑은 고딕", 
     "size": 14,
     "bold": true,
-    "align": "left"
+        "align": "left"
   },
   "body": {
     "font": "바탕",
@@ -156,6 +179,12 @@ def convert_md_to_hwpx(
   }
 }
 ```
+
+#### Phase 1.5 전용 YAML 워크플로우
+- `templates/*.yaml`: 문단/필드 최대 8개까지 정의 (제목, 본문, 표 블록 등) + 필수 스타일 속성
+- `validator/cli.py`(가칭): `md_to_hwpx.py` 결과와 YAML을 함께 받아 구조/스타일 diff 리포트 출력
+- `tests/fixtures/`: 입력 MD, 기대 YAML, 승인된 HWPX 샘플을 한 세트로 유지하여 회귀 테스트 가능
+- 목표: 새로운 양식 추가 시 YAML만 갱신하면 변환기와 검증기가 동시에 기대치를 공유하도록 함
 
 ### HWPX 검증 툴
 
