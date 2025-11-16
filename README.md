@@ -1,104 +1,178 @@
-# Document Automation System (Phase 0)
+# Document Automation System (Phase 1.5)
 
-Phase 0는 HWPX 표준 문서를 AI/사람이 빠르게 참조할 수 있도록 **간이 RAG 파이프라인**을 준비하는 단계입니다. 현재 레포지토리는 다음 두 가지 툴을 중심으로 구성됩니다.
+공공기관 공문서 자동 생성 시스템입니다. Markdown 텍스트를 표준화된 HWPX 포맷으로 변환합니다.
 
-1. `tools/chunk_builder.py` – `docs/hwpx_spec.md`를 섹션 단위로 분할하여 JSONL 청크를 생성합니다.
-2. `tools/spec_search.py` – 생성된 청크를 대상으로 BM25 기반 키워드 검색을 수행합니다.
+## 현재 구현 상태
 
-`ARCHITECTURE.md`에는 Phase 0~2.5까지의 전체 로드맵이 정리되어 있습니다. 본 README는 Phase 0 재현 방법에 초점을 맞춥니다.
+### ✅ Phase 0: HWPX 스펙 검색 시스템
+- `tools/chunk_builder.py` – HWPX 스펙 문서를 섹션 단위로 분할
+- `tools/spec_search.py` – BM25 기반 키워드 검색
+
+### ✅ Phase 1: Markdown → HWPX 변환기
+- `converter/md_to_hwpx.py` – 핵심 변환 엔진
+- 지원 기능: 제목, 본문, 굵게, 들여쓰기, 표, 페이지 설정
+- 최근 개선: 표 기반 제목/강조 블록, 정확한 스타일 사양, 들여쓰기 수정
+
+### 🔧 Phase 1.5: 검증 및 테스트 (진행 중)
+- `validator/phase1_5_validator.py` – HWPX 출력 검증
+- `validator/template_loader.py` – 템플릿 로딩 및 관리
+- `tests/` – 단위 및 통합 테스트
+
+자세한 로드맵은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참조하세요.
 
 ---
 
 ## 요구 사항
-- Python 3.11 이상 (표준 라이브러리만 사용)
-- (선택) 가상환경: `python -m venv .venv && source .venv/bin/activate`
+- Python 3.11 이상
+- 의존성: PyYAML, lxml, pytest
 
-필요 시 아래 명령으로 의존성을 설치할 수 있습니다.
-
+### 설치 방법
 ```bash
+# 가상환경 생성 및 활성화
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 의존성 설치
 pip install -r requirements.txt
 ```
-
-현재 Phase 0 도구는 추가 패키지 없이 동작하지만, 이후 Markdown 파서·XML 라이브러리를 도입할 경우 해당 파일을 갱신하십시오.
 
 ---
 
 ## 빠른 시작
-1. **레포지토리 클론 후 루트로 이동**
-   ```bash
-   git clone <repo-url>
-   cd md-retooling
-   ```
-2. **(선택) 가상환경 활성화 및 의존성 설치**
-3. **아래 순서대로 Phase 0 파이프라인을 실행**
 
-### 1) HWPX 스펙 청크 재생성
+### 1. Markdown → HWPX 변환
 ```bash
-python3 tools/chunk_builder.py --spec docs/hwpx_spec.md --out tools/chunks
+# 기본 사용법
+python3 converter/md_to_hwpx.py input.md output.hwpx
+
+# 예제 실행
+python3 converter/md_to_hwpx.py converter/sample_input.md output/test.hwpx
 ```
-- `tools/chunks/sections.jsonl`: 섹션별 텍스트와 메타데이터
-- `tools/chunks/chunks.meta.json`: 빌드 정보 요약
 
-### 2) 키워드 검색
+변환기가 지원하는 Markdown 문법:
+- `# 제목1`, `## 제목2`, `### 제목3` - 각 레벨에 맞는 스타일 적용
+- `**굵게**` - 인라인 굵게 처리
+- `들여쓰기` - 문단 들여쓰기 (네거티브 intent 값 사용)
+- 표 - 제목 블록 및 강조 블록으로 변환
+
+### 2. HWPX 스펙 검색
 ```bash
+# 스펙 문서 청크 생성
+python3 tools/chunk_builder.py --spec docs/hwpx_spec.md --out tools/chunks
+
+# 키워드 검색
 python3 tools/spec_search.py "줄간격 line-spacing" -k 5 --compact 1
 ```
-- `--compact` 옵션은 히트 근처 몇 줄만 압축 출력합니다.
-- `--json`을 지정하면 구조화된 결과를 반환하므로 LLM 프롬프트 작성에 활용하기 쉽습니다.
 
-### 3) Phase 0 스모크 테스트 (선택)
-청크 재생성 + 샘플 검색을 자동화한 스크립트를 제공합니다.
+### 3. HWPX 검증
 ```bash
-python3 tools/phase0_smoke_test.py
+# 생성된 HWPX 파일 검증
+python3 validator/cli.py output/test.hwpx
 ```
-- 청크 파일 존재 여부 → 필요 시 자동 재빌드
-- 대표 쿼리로 `spec_search.py` 실행
-- 결과 요약과 함께 종료 코드로 성공/실패 여부를 전달
+
+### 4. 테스트 실행
+```bash
+# 모든 테스트 실행
+pytest
+
+# 특정 테스트만 실행
+pytest tests/unit/test_template_loader.py
+```
 
 ---
 
 ## 디렉터리 구조
 ```
 .
-├── ARCHITECTURE.md        # 전체 로드맵 및 컴포넌트 상세
-├── README.md              # (현재 문서) Phase 0 가이드
+├── README.md              # 이 문서
+├── requirements.txt       # Python 의존성
 ├── docs/
-│   └── hwpx_spec.md       # 통합된 HWPX 스펙 (원본 조각은 루트 okok*.md)
+│   ├── ARCHITECTURE.md    # 전체 로드맵 및 아키텍처
+│   ├── hwpx_spec.md       # HWPX 표준 스펙 문서
+│   └── TROUBLESHOOTING.md # 문제 해결 가이드
+├── converter/
+│   ├── md_to_hwpx.py      # 🔥 Markdown → HWPX 변환 엔진
+│   ├── PHASE1_GUIDE.md    # Phase 1 가이드
+│   ├── PHASE1_5_GUIDE.md  # Phase 1.5 가이드
+│   └── sample_input.md    # 예제 입력 파일
+├── validator/
+│   ├── cli.py             # 검증 CLI 인터페이스
+│   ├── phase1_5_validator.py  # HWPX 검증 로직
+│   └── template_loader.py # 템플릿 로더
+├── templates/             # HWPX 템플릿 파일
 ├── tools/
-│   ├── chunk_builder.py   # 스펙 → 섹션 청크 생성
-│   ├── spec_search.py     # BM25 기반 검색
-│   ├── phase0_smoke_test.py (추가됨)
-│   └── chunks/            # sections.jsonl + meta
-└── ...
+│   ├── chunk_builder.py   # 스펙 문서 청크 생성
+│   ├── spec_search.py     # 스펙 검색 도구
+│   └── chunks/            # 생성된 청크 데이터
+├── tests/
+│   ├── unit/              # 단위 테스트
+│   ├── integration/       # 통합 테스트
+│   └── fixtures/          # 테스트 픽스처
+└── output/                # 생성된 HWPX 파일
 ```
 
 ---
 
-## Phase 0 완료 체크리스트
-- [x] `docs/hwpx_spec.md` 최신 상태 유지
-- [x] `tools/chunks/sections.jsonl` 재빌드 가능
-- [x] `tools/spec_search.py`로 스펙 검색 가능
-- [ ] README/requirements 최신화 (본 문서로 충족)
-- [ ] 스모크 테스트 통과 (추가 스크립트 활용)
+## 주요 기능 체크리스트
 
-체크리스트를 충족한 후 Phase 1(MD→HWPX 변환기, HWPX 검증 툴)로 진입하는 것을 권장합니다.
+### Phase 0: 스펙 검색 시스템
+- [x] HWPX 스펙 문서 청크 생성
+- [x] BM25 기반 키워드 검색
+- [x] JSON 출력 지원
+
+### Phase 1: Markdown → HWPX 변환
+- [x] 기본 문단 변환
+- [x] 제목 레벨 (H1, H2, H3) 지원
+- [x] 인라인 굵게 처리
+- [x] 문단 들여쓰기 (네거티브 intent)
+- [x] 표 기반 블록 (제목/강조)
+- [x] 페이지 설정 및 섹션 속성
+- [x] CharPr ID 제약 (0-8 범위)
+
+### Phase 1.5: 검증 및 테스트
+- [x] HWPX 구조 검증기
+- [x] 템플릿 로더
+- [x] 단위 테스트 프레임워크
+- [ ] 통합 테스트 완성
+- [ ] 전체 스모크 테스트
 
 ---
 
-## 자주 묻는 질문
-### Q. 스펙에 새 버전이 릴리스되면?
-1. `docs/hwpx_spec.md`를 교체합니다.
-2. `python3 tools/chunk_builder.py ...`를 다시 실행합니다.
-3. 필요시 `tools/hwpx_terms.alias.json` 등 보조 데이터도 갱신합니다.
+## 알려진 이슈 및 제약사항
 
-### Q. LLM 프롬프트에 어떻게 사용하나요?
-1. 위 검색 결과에서 필요한 섹션의 `anchor`, `text`를 복사합니다.
-2. LLM에게 "다음 HWPX 스펙을 참고하여 ..."와 같이 전달합니다.
-3. Phase 1 변환기가 준비되면 해당 코드와 연계됩니다.
+현재 알려진 문제는 [converter/CURRENT_ISSUES.md](converter/CURRENT_ISSUES.md)를 참조하세요.
+
+주요 제약사항:
+- CharPr ID는 0-8 범위로 제한 (한글 호환성)
+- 복잡한 중첩 구조는 아직 미지원
+- 이미지 삽입 기능 미구현
+
+## 문제 해결
+
+문제가 발생하면:
+1. [converter/TROUBLESHOOTING.md](converter/TROUBLESHOOTING.md) 확인
+2. `output/` 디렉토리의 생성된 HWPX 파일을 한글에서 열어 확인
+3. 검증기로 구조 검사: `python3 validator/cli.py output/파일.hwpx`
 
 ---
 
 ## 다음 단계
-- Phase 1 진입 전: 간단한 MD→HWPX 변환 PoC 및 테스트 설계
-- Phase 1: 변환기 + 검증기 기본 기능 구현
-- Phase 2 이후: LLM API 연동, 템플릿 자동화 등 `ARCHITECTURE.md` 참고
+
+### Phase 2: 고급 기능
+- 이미지 삽입
+- 각주 및 미주
+- 목차 자동 생성
+- 복잡한 표 지원
+
+### Phase 2.5: 자동화
+- LLM API 연동
+- 템플릿 자동 선택
+- 배치 변환
+
+자세한 내용은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참조하세요.
+
+---
+
+## 기여 및 라이선스
+
+이 프로젝트는 공공기관 문서 자동화를 위한 내부 도구입니다.
