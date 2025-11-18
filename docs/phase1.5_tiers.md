@@ -32,3 +32,7 @@
 ## Run Log & Compatibility Status (Free-Form)
 - **2025-11-16 상태:** Tier 0 샘플(`output/test_final.hwpx`)은 `templates/phase1_5_sample.yaml`과 비교 시 통과. Tier 1~3 샘플은 아직 미수신 상태라 검증 대기 중.
 - 추후 실행 기록은 날짜/샘플/명령/결과/메모 순으로 자유롭게 작성한다. 로그가 과도해지면 이 문서를 보관용으로 아카이브하거나 삭제한다.
+- **2025-11-16 실행:** `/bin/python3 converter/md_to_hwpx.py converter/sample_input.md output/test_final.hwpx` → `/bin/python3 validator/cli.py templates/phase1_5_sample.yaml output/test_final.hwpx --format text` (PASS 29/29). 메모: content.hpf에 2016 확장 namespace 및 메타데이터 세트를 추가했고, `Preview/PrvText.txt` + 1x1 PNG 썸네일을 자동 생성하도록 복원. Validator 초기 실패 이력 해소됨.
+- **2025-11-16 실행:** `/bin/python3 converter/md_to_hwpx.py converter/sample_input.md output/test_final.hwpx` → `/bin/python3 validator/cli.py templates/phase1_5_sample.yaml output/test_final.hwpx --format text` (PASS 29/29). 메모: 724×1024 단색 `Preview/PrvImage.png` 플레이스홀더를 새로 포함하고 텍스트 프리뷰와 동시생성하도록 유지. Tier0 기준으로는 Option A 메타데이터 구조 + 프리뷰 자산이 모두 안정 동작 확인.
+- **Option A 메모 (2025-11-16):** Paragraph layout/indent 재작업은 고위험 요소로 분류되어 당분간 보류한다. 관련 변경은 `converter/md_to_hwpx.py`에서 명시적으로 플래그를 켠 뒤 충분한 검증 루프(`converter/sample_input.md` → validator) 하에서만 진행한다.
+- **Preview 자산 계획:** Hangul Tier1 산출물과의 구조적 차이를 줄이기 위해 `Preview/PrvText.txt`와 PNG 썸네일을 다시 생성 대상으로 편입한다. 실제 구현은 메타데이터/namespace 동기화 이후 단계에서 수행하며, 최종 검증 루프에 포함한다.
