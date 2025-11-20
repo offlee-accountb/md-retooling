@@ -529,15 +529,22 @@ PREVIEW_PNG_BYTES = base64.b64decode(PREVIEW_PNG_BASE64)
 
 
 def parse_md_lines(lines: Iterable[str]) -> List[Block]:
+    def _normalize_line(raw: str) -> str:
+        # 탭 → 스페이스 치환 후 개행 제거
+        return raw.replace("\t", "    ").rstrip("\n")
+
     def _parse_table_block(idx: int, line_list: List[str]) -> tuple[TableBlock | None, int]:
         """현재 인덱스에서 마크다운 표를 파싱한다. 다음 소비할 인덱스까지 반환."""
 
-        title_match = re.match(r"^<표 제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        title_match = re.match(r"^<\s*표\s*제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
         if not title_match:
             return None, idx
         title = title_match.group(1).strip()
         table_lines: List[str] = []
         j = idx + 1
+        # 제목 다음의 공백/빈 줄은 건너뛴다.
+        while j < len(line_list) and not line_list[j].strip():
+            j += 1
         while j < len(line_list):
             ln = line_list[j].rstrip("\n")
             if ln.strip().startswith("|"):
@@ -581,21 +588,21 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         return tbl, j
 
     def _parse_summary_block(idx: int, line_list: List[str]) -> tuple[SummaryTableBlock | None, int]:
-        if line_list[idx].strip() != "<요약표 시작>":
+        marker = line_list[idx].strip().replace(" ", "")
+        if marker not in ("<요약표시작>", "<요약표시작>"):
             return None, idx
         items: List[Block] = []
         j = idx + 1
         while j < len(line_list):
-            ln_original = line_list[j].rstrip("\n")
+            ln_original = _normalize_line(line_list[j])
             ln = ln_original.lstrip(" ")
-            leading = len(ln_original) - len(ln)
-            if ln.strip() == "<요약표 끝>":
+            if ln.replace(" ", "") == "<요약표끝>":
                 j += 1
                 break
             if not ln:
                 j += 1
                 continue
-            if leading == 1 and ln.startswith("◦"):
+            if ln.startswith("◦"):
                 text = ln[len("◦") :].strip()
                 items.append(Block(BlockType.BODY, ln_original, text))
             elif ln.startswith("-"):
@@ -614,10 +621,10 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         return summ, j
 
     blocks: List[Block] = []
-    line_list = list(lines)
+    line_list = [_normalize_line(ln) for ln in lines]
     i = 0
     while i < len(line_list):
-        line = line_list[i].rstrip("\n")
+        line = line_list[i]
         stripped = line.lstrip(" ")
         leading_spaces = len(line) - len(stripped)
 
@@ -642,12 +649,18 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
 
         if stripped.startswith("<주제목>"):
             text = stripped[len("<주제목>") :].strip()
+            if not text and i + 1 < len(line_list):
+                text = line_list[i + 1].strip()
+                i += 1
             blocks.append(Block(BlockType.TITLE, line, text))
             i += 1
             continue
 
         if stripped.startswith("<강조>"):
             text = stripped[len("<강조>") :].strip()
+            if not text and i + 1 < len(line_list):
+                text = line_list[i + 1].strip()
+                i += 1
             blocks.append(Block(BlockType.EMPHASIS, line, text))
             i += 1
             continue
@@ -658,20 +671,20 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
             i += 1
             continue
 
-        if leading_spaces == 1 and stripped.startswith("◦"):
+        if stripped.startswith(("◦", "•", "∙", "·")):
             text = stripped[len("◦") :].strip()
             blocks.append(Block(BlockType.BODY, line, text))
             i += 1
             continue
 
-        if leading_spaces == 3 and stripped.startswith("-"):
-            text = stripped[len("-") :].strip()
+        if stripped.startswith(("-", "–", "—")) and leading_spaces <= 3:
+            text = stripped[len(stripped[0]) :].strip()
             blocks.append(Block(BlockType.DESC2, line, text))
             i += 1
             continue
 
-        if leading_spaces == 4 and stripped.startswith("*"):
-            text = stripped[len("*") :].strip()
+        if stripped.startswith(("*", "●")) and leading_spaces <= 4:
+            text = stripped[len(stripped[0]) :].strip()
             blocks.append(Block(BlockType.DESC3, line, text))
             i += 1
             continue
