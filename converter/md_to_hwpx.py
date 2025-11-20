@@ -38,6 +38,8 @@ class BlockType(Enum):
     DESC2 = auto()       # - (3 spaces)
     DESC3 = auto()       # * (4 spaces)
     EMPHASIS = auto()    # <강조>
+    TABLE = auto()       # markdown table
+    SUMMARY_TABLE = auto()  # <요약표> 전용
     PLAIN = auto()       # fallback / other
 
 
@@ -46,6 +48,23 @@ class Block:
     type: BlockType
     raw: str            # original line
     text: str           # content without leading markers
+
+
+@dataclass
+class TableBlock(Block):
+    """Markdown 표를 담는 특수 블록."""
+
+    title: str
+    header: List[str]
+    aligns: List[str]
+    rows: List[List[str]]
+
+
+@dataclass
+class SummaryTableBlock(Block):
+    """요약표(<요약표 시작> ~ <요약표 끝>) 범위를 하나의 표로 묶는다."""
+
+    items: List[Block]
 
 
 @dataclass
@@ -129,6 +148,27 @@ STYLE_ID_MAP = {
     BlockType.EMPHASIS: "6",
     BlockType.PLAIN: "0",
 }
+
+# Header/Footer 전용 스타일 ID (header.xml 정의와 일치해야 함)
+HEADER_PARA_ID = "12"
+FOOTER_PARA_ID = "13"
+HEADER_CHAR_ID = "10"
+FOOTER_CHAR_ID = "10"
+HEADER_STYLE_ID = "12"
+FOOTER_STYLE_ID = "13"
+TABLE_TITLE_PARA_ID = "14"
+TABLE_HEADER_PARA_ID = "15"
+TABLE_BODY_PARA_ID = "16"
+SUMMARY_TABLE_PARA_ID = "17"   # 단일 셀 wrapper
+SUMMARY_BODY_PARA_ID = "18"
+SUMMARY_DESC_PARA_ID = "19"
+TABLE_TITLE_STYLE_ID = "14"
+TABLE_HEADER_STYLE_ID = "15"
+TABLE_BODY_STYLE_ID = "16"
+SUMMARY_BODY_STYLE_ID = "17"
+SUMMARY_DESC_STYLE_ID = "18"
+TABLE_BODY_CHAR_ID = "11"
+TABLE_HEADER_CHAR_ID = "12"
 
 # Spacer paragraph mapping: certain BlockType 앞에 여백용 문단 삽입
 SPACER_CHAR_MAP = {
@@ -489,57 +529,155 @@ PREVIEW_PNG_BYTES = base64.b64decode(PREVIEW_PNG_BASE64)
 
 
 def parse_md_lines(lines: Iterable[str]) -> List[Block]:
-    blocks: List[Block] = []
+    def _parse_table_block(idx: int, line_list: List[str]) -> tuple[TableBlock | None, int]:
+        """현재 인덱스에서 마크다운 표를 파싱한다. 다음 소비할 인덱스까지 반환."""
 
-    for line in lines:
-        # Preserve original line, but strip trailing newline for processing
-        original = line.rstrip("\n")
-        stripped = original.lstrip(" ")
-        leading_spaces = len(original) - len(stripped)
+        title_match = re.match(r"^<표 제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not title_match:
+            return None, idx
+        title = title_match.group(1).strip()
+        table_lines: List[str] = []
+        j = idx + 1
+        while j < len(line_list):
+            ln = line_list[j].rstrip("\n")
+            if ln.strip().startswith("|"):
+                table_lines.append(ln.strip())
+                j += 1
+                continue
+            # 표 블록이 끝났다고 판단
+            break
+
+        if len(table_lines) < 2:
+            return None, idx
+
+        def _split_row(row: str) -> List[str]:
+            cells = row.strip().strip("|").split("|")
+            return [c.strip() for c in cells]
+
+        header_cells = _split_row(table_lines[0])
+        align_cells = _split_row(table_lines[1])
+        body_rows = [_split_row(r) for r in table_lines[2:]]
+
+        def _parse_align(token: str) -> str:
+            token = token.strip()
+            if token.startswith(":") and token.endswith(":"):
+                return "CENTER"
+            if token.endswith(":"):
+                return "RIGHT"
+            if token.startswith(":"):
+                return "LEFT"
+            return "LEFT"
+
+        aligns = [_parse_align(a) for a in align_cells]
+        tbl = TableBlock(
+            type=BlockType.TABLE,
+            raw="\n".join([line_list[idx]] + table_lines),
+            text=title,
+            title=title,
+            header=header_cells,
+            aligns=aligns,
+            rows=body_rows,
+        )
+        return tbl, j
+
+    def _parse_summary_block(idx: int, line_list: List[str]) -> tuple[SummaryTableBlock | None, int]:
+        if line_list[idx].strip() != "<요약표 시작>":
+            return None, idx
+        items: List[Block] = []
+        j = idx + 1
+        while j < len(line_list):
+            ln_original = line_list[j].rstrip("\n")
+            ln = ln_original.lstrip(" ")
+            leading = len(ln_original) - len(ln)
+            if ln.strip() == "<요약표 끝>":
+                j += 1
+                break
+            if not ln:
+                j += 1
+                continue
+            if leading == 1 and ln.startswith("◦"):
+                text = ln[len("◦") :].strip()
+                items.append(Block(BlockType.BODY, ln_original, text))
+            elif ln.startswith("-"):
+                text = ln[len("-") :].strip()
+                items.append(Block(BlockType.DESC2, ln_original, text))
+            else:
+                # 요약표 내부의 기타 라인은 PLAIN으로 유지
+                items.append(Block(BlockType.PLAIN, ln_original, ln))
+            j += 1
+        summ = SummaryTableBlock(
+            type=BlockType.SUMMARY_TABLE,
+            raw="\n".join(line_list[idx:j]),
+            text="요약표",
+            items=items,
+        )
+        return summ, j
+
+    blocks: List[Block] = []
+    line_list = list(lines)
+    i = 0
+    while i < len(line_list):
+        line = line_list[i].rstrip("\n")
+        stripped = line.lstrip(" ")
+        leading_spaces = len(line) - len(stripped)
+
+        # 요약표
+        summary_block, next_idx = _parse_summary_block(i, line_list)
+        if summary_block is not None:
+            blocks.append(summary_block)
+            i = next_idx
+            continue
+
+        # 표
+        table_block, next_idx = _parse_table_block(i, line_list)
+        if table_block is not None:
+            blocks.append(table_block)
+            i = next_idx
+            continue
 
         if not stripped:
-            # Empty line → we can keep as PLAIN (or skip). For now keep.
-            blocks.append(Block(BlockType.PLAIN, original, ""))
+            blocks.append(Block(BlockType.PLAIN, line, ""))
+            i += 1
             continue
 
-        # Title: <주제목> 텍스트
         if stripped.startswith("<주제목>"):
             text = stripped[len("<주제목>") :].strip()
-            blocks.append(Block(BlockType.TITLE, original, text))
+            blocks.append(Block(BlockType.TITLE, line, text))
+            i += 1
             continue
 
-        # Emphasis: <강조> 텍스트
         if stripped.startswith("<강조>"):
             text = stripped[len("<강조>") :].strip()
-            blocks.append(Block(BlockType.EMPHASIS, original, text))
+            blocks.append(Block(BlockType.EMPHASIS, line, text))
+            i += 1
             continue
 
-        # Subtitle: starts with □ (no strict space requirement, rely on char)
         if stripped.startswith("□"):
             text = stripped[len("□") :].strip()
-            blocks.append(Block(BlockType.SUBTITLE, original, text))
+            blocks.append(Block(BlockType.SUBTITLE, line, text))
+            i += 1
             continue
 
-        # Body: one leading space then ◦
         if leading_spaces == 1 and stripped.startswith("◦"):
             text = stripped[len("◦") :].strip()
-            blocks.append(Block(BlockType.BODY, original, text))
+            blocks.append(Block(BlockType.BODY, line, text))
+            i += 1
             continue
 
-        # Desc2: three spaces then -
         if leading_spaces == 3 and stripped.startswith("-"):
             text = stripped[len("-") :].strip()
-            blocks.append(Block(BlockType.DESC2, original, text))
+            blocks.append(Block(BlockType.DESC2, line, text))
+            i += 1
             continue
 
-        # Desc3: four spaces then *
         if leading_spaces == 4 and stripped.startswith("*"):
             text = stripped[len("*") :].strip()
-            blocks.append(Block(BlockType.DESC3, original, text))
+            blocks.append(Block(BlockType.DESC3, line, text))
+            i += 1
             continue
 
-        # Fallback: plain text
-        blocks.append(Block(BlockType.PLAIN, original, stripped))
+        blocks.append(Block(BlockType.PLAIN, line, stripped))
+        i += 1
 
     return blocks
 
@@ -564,6 +702,12 @@ def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
 
 
 def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full_text: str) -> None:
+    _append_text_with_bold_custom(paragraph, base_char_id, full_text, INLINE_BOLD_CHAR_ID)
+
+
+def _append_text_with_bold_custom(
+    paragraph: ET.Element, base_char_id: str | None, full_text: str, bold_char_id: str
+) -> None:
     if full_text is None:
         return
     if not full_text:
@@ -576,7 +720,7 @@ def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full
             continue
         run_attrs = {}
         if is_bold:
-            run_attrs["charPrIDRef"] = INLINE_BOLD_CHAR_ID
+            run_attrs["charPrIDRef"] = bold_char_id
         elif base_char_id is not None:
             run_attrs["charPrIDRef"] = base_char_id
         run = ET.SubElement(paragraph, _q("hp", "run"), run_attrs)
@@ -592,6 +736,8 @@ def _strip_bold_markup(text: str) -> str:
 
 def _format_block_preview_text(block: Block) -> Optional[str]:
     if not block.text:
+        return None
+    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE):
         return None
     if block.type == BlockType.TITLE:
         return None
@@ -897,8 +1043,8 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
                 _q("hp", "p"),
                 {
                     "id": "0",
-                    "paraPrIDRef": "8",
-                    "styleIDRef": "0",
+                    "paraPrIDRef": HEADER_PARA_ID,
+                    "styleIDRef": HEADER_STYLE_ID,
                     "pageBreak": "0",
                     "columnBreak": "0",
                     "merged": "0",
@@ -907,7 +1053,7 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
             header_run_inner = ET.SubElement(
                 header_p,
                 _q("hp", "run"),
-                {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]},
+                {"charPrIDRef": HEADER_CHAR_ID},
             )
             # 오른쪽 정렬 시 샘플처럼 앞에 탭을 하나 두어 위치를 맞춘다.
             t = ET.SubElement(header_run_inner, _q("hp", "t"))
@@ -936,7 +1082,7 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
         # 기존 run 들 앞에 footer ctrl run 을 하나 삽입
         footer_run = ET.Element(
             _q("hp", "run"),
-            {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]},
+            {"charPrIDRef": FOOTER_CHAR_ID},
         )
         footer_ctrl = ET.SubElement(footer_run, _q("hp", "ctrl"))
         footer_elem = ET.SubElement(
@@ -970,8 +1116,8 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
             _q("hp", "p"),
             {
                 "id": "0",
-                "paraPrIDRef": "9",
-                "styleIDRef": "0",
+                "paraPrIDRef": FOOTER_PARA_ID,
+                "styleIDRef": FOOTER_STYLE_ID,
                 "pageBreak": "0",
                 "columnBreak": "0",
                 "merged": "0",
@@ -980,7 +1126,7 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
         footer_run_inner = ET.SubElement(
             footer_p,
             _q("hp", "run"),
-            {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]},
+            {"charPrIDRef": FOOTER_CHAR_ID},
         )
         t_footer = ET.SubElement(footer_run_inner, _q("hp", "t"))
         t_footer.text = footer_text
@@ -1256,6 +1402,335 @@ def _append_emphasis_table(
         secpr_attached=secpr_attached,
     )
     return p_id, table_id + 1, secpr_attached
+
+
+def _append_markdown_table(
+    parent: ET.Element, block: TableBlock, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    """일반 마크다운 표를 생성한다."""
+
+    col_cnt = max(len(block.header), max((len(r) for r in block.rows), default=0))
+    if col_cnt == 0:
+        return p_id, table_id, secpr_attached
+
+    # 표 제목 앞 spacer (4pt) 확보
+    p_sp = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    run_sp = ET.SubElement(p_sp, _q("hp", "run"), {"charPrIDRef": "4"})
+    t_sp = ET.SubElement(run_sp, _q("hp", "t"))
+    t_sp.text = " "
+    p_id += 1
+
+    # 표 제목
+    if block.title:
+        p_title = ET.SubElement(
+            parent,
+            _q("hp", "p"),
+            {
+                "id": str(p_id),
+                "paraPrIDRef": TABLE_TITLE_PARA_ID,
+                "styleIDRef": TABLE_TITLE_STYLE_ID,
+                "pageBreak": "0",
+                "columnBreak": "0",
+                "merged": "0",
+            },
+        )
+        _append_text_with_bold_custom(p_title, "7", f"< {block.title} >", "13")
+        p_id += 1
+
+    # 표 wrapper
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_wrapper, _q("hp", "run"), {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "1",
+            "rowCnt": str(len(block.rows) + 1),
+            "colCnt": str(col_cnt),
+            "cellSpacing": "0",
+            "borderFillIDRef": "1",
+            "noAdjust": "0",
+        },
+    )
+    row_height = int(TITLE_BODY_HEIGHT_HWP)
+    total_height = str(row_height * (len(block.rows) + 1))
+    ET.SubElement(
+        tbl,
+        _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": total_height, "heightRelTo": "ABSOLUTE", "protect": "0"},
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "510", "right": "510", "top": "141", "bottom": "141"})
+
+    # 열 너비 계산 (균등 분할)
+    total_width = int(TABLE_WIDTH_HWP)
+    base_width = total_width // col_cnt
+    col_widths = [base_width for _ in range(col_cnt)]
+    remainder = total_width - base_width * col_cnt
+    if remainder > 0:
+        col_widths[-1] += remainder
+
+    def _add_row(row_cells: List[str], *, is_header: bool, is_last: bool, row_idx: int, p_counter: int) -> int:
+        tr = ET.SubElement(tbl, _q("hp", "tr"))
+        padded = list(row_cells) + [""] * (col_cnt - len(row_cells))
+        for col_idx, cell_text in enumerate(padded[:col_cnt]):
+            tc = ET.SubElement(
+                tr,
+                _q("hp", "tc"),
+                {
+                    "name": "",
+                    "header": "0",
+                    "hasMargin": "1",
+                    "protect": "0",
+                    "editable": "0",
+                    "dirty": "0",
+                    "borderFillIDRef": "7" if is_header else ("9" if is_last else "8"),
+                },
+            )
+            sub_list = ET.SubElement(
+                tc,
+                _q("hp", "subList"),
+                {
+                    "id": "",
+                    "textDirection": "HORIZONTAL",
+                    "lineWrap": "BREAK",
+                    "vertAlign": "CENTER",
+                    "linkListIDRef": "0",
+                    "linkListNextIDRef": "0",
+                    "textWidth": "0",
+                    "textHeight": "0",
+                    "hasTextRef": "0",
+                    "hasNumRef": "0",
+                },
+            )
+            p = ET.SubElement(
+                sub_list,
+                _q("hp", "p"),
+                {
+                    "id": str(p_counter),
+                    "paraPrIDRef": TABLE_HEADER_PARA_ID if is_header else TABLE_BODY_PARA_ID,
+                    "styleIDRef": TABLE_HEADER_STYLE_ID if is_header else TABLE_BODY_STYLE_ID,
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0",
+                },
+            )
+            char_id = TABLE_HEADER_CHAR_ID if is_header else TABLE_BODY_CHAR_ID
+            bold_id = TABLE_HEADER_CHAR_ID if is_header else TABLE_BODY_CHAR_ID
+            _append_text_with_bold_custom(p, char_id, cell_text, bold_id)
+            ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx)})
+            ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+            ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(col_widths[col_idx]), "height": str(row_height)})
+            ET.SubElement(
+                tc,
+                _q("hp", "cellMargin"),
+                {"left": "283", "right": "283", "top": "283", "bottom": "283"},
+            )
+            p_counter += 1
+        return p_counter
+
+    p_counter = p_id
+    p_counter = _add_row(block.header, is_header=True, is_last=False if block.rows else True, row_idx=0, p_counter=p_counter)
+    for idx, row in enumerate(block.rows):
+        is_last = idx == len(block.rows) - 1
+        p_counter = _add_row(row, is_header=False, is_last=is_last, row_idx=idx + 1, p_counter=p_counter)
+
+    return p_counter, table_id + 1, secpr_attached
+
+
+def _append_summary_table(
+    parent: ET.Element, block: SummaryTableBlock, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    """요약표 블록을 표 형태로 렌더링한다."""
+
+    if not block.items:
+        return p_id, table_id, secpr_attached
+
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_wrapper, _q("hp", "run"), {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "1",
+            "rowCnt": "1",
+            "colCnt": "1",
+            "cellSpacing": "0",
+            "borderFillIDRef": "10",
+            "noAdjust": "0",
+        },
+    )
+    row_height = int(TITLE_BODY_HEIGHT_HWP)
+    total_height = str(row_height * len(block.items))
+    ET.SubElement(
+        tbl,
+        _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": total_height, "heightRelTo": "ABSOLUTE", "protect": "0"},
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(
+        tbl,
+        _q("hp", "inMargin"),
+        {"left": mm_to_hwp(5.0), "right": mm_to_hwp(5.0), "top": mm_to_hwp(2.0), "bottom": mm_to_hwp(2.0)},
+    )
+
+    p_counter = p_id
+    tr = ET.SubElement(tbl, _q("hp", "tr"))
+    tc = ET.SubElement(
+        tr,
+        _q("hp", "tc"),
+        {
+            "name": "",
+            "header": "0",
+            "hasMargin": "1",
+            "protect": "0",
+            "editable": "0",
+            "dirty": "0",
+            "borderFillIDRef": "10",
+        },
+    )
+    sub_list = ET.SubElement(
+        tc,
+        _q("hp", "subList"),
+        {
+            "id": "",
+            "textDirection": "HORIZONTAL",
+            "lineWrap": "BREAK",
+            "vertAlign": "CENTER",
+            "linkListIDRef": "0",
+            "linkListNextIDRef": "0",
+            "textWidth": "0",
+            "textHeight": "0",
+            "hasTextRef": "0",
+            "hasNumRef": "0",
+        },
+    )
+
+    for item in block.items:
+        para_pr = SUMMARY_BODY_PARA_ID if item.type == BlockType.BODY else SUMMARY_DESC_PARA_ID
+        style_pr = SUMMARY_BODY_STYLE_ID if item.type == BlockType.BODY else SUMMARY_DESC_STYLE_ID
+        char_id = "7" if item.type == BlockType.BODY else TABLE_BODY_CHAR_ID
+        bold_id = "13" if item.type == BlockType.BODY else "12"
+        p = ET.SubElement(
+            sub_list,
+            _q("hp", "p"),
+            {
+                "id": str(p_counter),
+                "paraPrIDRef": para_pr,
+                "styleIDRef": style_pr,
+                "pageBreak": "0",
+                "columnBreak": "0",
+                "merged": "0",
+            },
+        )
+        _append_text_with_bold_custom(p, char_id, item.text, bold_id)
+        p_counter += 1
+
+    ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "0"})
+    ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+    ET.SubElement(tc, _q("hp", "cellSz"), {"width": TABLE_WIDTH_HWP, "height": str(row_height * max(1, len(block.items)))})
+    ET.SubElement(
+        tc,
+        _q("hp", "cellMargin"),
+        {"left": mm_to_hwp(5.0), "right": mm_to_hwp(5.0), "top": mm_to_hwp(2.0), "bottom": mm_to_hwp(2.0)},
+    )
+
+    return p_counter, table_id + 1, secpr_attached
 def mm_to_hwp(mm: float) -> str:
     """Convert millimeters to Hangul internal HWPUNIT."""
 
@@ -1413,7 +1888,80 @@ def build_header_xml() -> bytes:
     add_border_fill(4)
     add_border_fill(5, fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"})
     add_border_fill(6, fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"})
-    border_fills.set("itemCnt", "6")
+
+    def add_border_fill_custom(
+        bf_id: int,
+        *,
+        fill_brush: dict | None = None,
+        borders: dict[str, tuple[str, str]] | None = None,
+    ) -> None:
+        """borders={'top':('SOLID','0.5 mm'), 'bottom':('DOUBLE','0.5 mm')}"""
+
+        bf = ET.SubElement(
+            border_fills,
+            _q("hh", "borderFill"),
+            {
+                "id": str(bf_id),
+                "threeD": "0",
+                "shadow": "0",
+                "centerLine": "NONE",
+                "breakCellSeparateLine": "0",
+            },
+        )
+        ET.SubElement(bf, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+        ET.SubElement(bf, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+        def _add_edge(tag: str, default_type: str = "NONE", default_width: str = "0.1 mm") -> None:
+            typ, width = (borders.get(tag) if borders and tag in borders else (default_type, default_width))
+            ET.SubElement(bf, _q("hh", f"{tag}Border"), {"type": typ, "width": width, "color": "#000000"})
+        _add_edge("left")
+        _add_edge("right")
+        _add_edge("top")
+        _add_edge("bottom")
+        ET.SubElement(bf, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
+        if fill_brush is not None:
+            brush = ET.SubElement(bf, _q("hc", "fillBrush"))
+            ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
+
+    # 표/요약표용 borderFill
+    add_border_fill_custom(
+        7,
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+        borders={
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE", "0.5 mm"),
+            "left": ("NONE", "0.1 mm"),
+            "right": ("NONE", "0.1 mm"),
+        },
+    )
+    add_border_fill_custom(
+        8,
+        borders={
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+            "left": ("NONE", "0.1 mm"),
+            "right": ("NONE", "0.1 mm"),
+        },
+    )
+    add_border_fill_custom(
+        9,
+        borders={
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+            "left": ("NONE", "0.1 mm"),
+            "right": ("NONE", "0.1 mm"),
+        },
+    )
+    add_border_fill_custom(
+        10,
+        borders={
+            "top": ("DOTTED", "0.5 mm"),
+            "bottom": ("DOTTED", "0.5 mm"),
+            "left": ("DOTTED", "0.5 mm"),
+            "right": ("DOTTED", "0.5 mm"),
+        },
+    )
+
+    border_fills.set("itemCnt", "10")
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
@@ -1524,6 +2072,10 @@ def build_header_xml() -> bytes:
         (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
         (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
         (9, 100, 2, False),    # 1pt filler
+        (10, 1300, 1, False),  # 머리말/꼬리말 휴먼명조 13pt
+        (11, 1100, 2, False),  # 표 본문 맑은고딕 11pt
+        (12, 1100, 2, True),   # 표 헤더 맑은고딕 11pt Bold
+        (13, 1200, 2, True),   # 표/요약표 볼드 맑은고딕 12pt
     ]
     for cid, height, font_id, is_bold in char_defs:
         add_char_pr(cid, height, font_id, bold=is_bold)
@@ -1652,6 +2204,34 @@ def build_header_xml() -> bytes:
             },
         ),
         (11, "LEFT", 135, {"font_line_height": "0", "snap_to_grid": "1"}),
+        (12, "RIGHT", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
+        (13, "RIGHT", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
+        (14, "CENTER", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 제목
+        (15, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 헤더
+        (16, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 본문
+        (17, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 요약표 셀 wrapper
+        (
+            18,
+            "LEFT",
+            130,
+            {
+                "font_line_height": "0",
+                "snap_to_grid": "1",
+                "margin": {"intent": 2350},
+            },
+        ),  # 요약표 본문
+        (
+            19,
+            "LEFT",
+            130,
+            {
+                "font_line_height": "0",
+                "snap_to_grid": "1",
+                "margin": {"intent": 2650},
+            },
+        ),  # 요약표 설명
+        (12, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
+        (13, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
     ]
     for pid, align, spacing, extra in para_defs:
         add_para_pr(
@@ -1733,6 +2313,13 @@ def build_header_xml() -> bytes:
         (9, "예비본문B", "ReserveBodyB", 9, 7),
         (10, "예비캡션", "ReserveCaption", 10, 7),
         (11, "예비강조", "ReserveEmphasis", 11, 8),
+        (12, "머리말", "Header", int(HEADER_PARA_ID), int(HEADER_CHAR_ID)),
+        (13, "꼬리말", "Footer", int(FOOTER_PARA_ID), int(FOOTER_CHAR_ID)),
+        (14, "표제목", "TableTitle", int(TABLE_TITLE_PARA_ID), 7),
+        (15, "표헤더", "TableHeader", int(TABLE_HEADER_PARA_ID), int(TABLE_HEADER_CHAR_ID)),
+        (16, "표본문", "TableBody", int(TABLE_BODY_PARA_ID), int(TABLE_BODY_CHAR_ID)),
+        (17, "요약본문", "SummaryBody", int(SUMMARY_BODY_PARA_ID), 7),
+        (18, "요약설명", "SummaryDesc", int(SUMMARY_DESC_PARA_ID), int(TABLE_BODY_CHAR_ID)),
     ]
     for sid, name, eng, para_ref, char_ref in style_defs:
         add_style(sid, name, eng, para_ref, char_ref)
@@ -1796,6 +2383,17 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
     # Tier1 parity testing proves stable. Do not modify the geometry logic below
     # without running the full validator loop on converter/sample_input.md.
     for block in text_blocks:
+        if isinstance(block, TableBlock):
+            p_id, table_id, secpr_attached = _append_markdown_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+        if isinstance(block, SummaryTableBlock):
+            p_id, table_id, secpr_attached = _append_summary_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+
         # 1) 필요하면 spacer 문단 추가
         spacer_char_id = SPACER_CHAR_MAP.get(block.type)
         if spacer_char_id is not None:
