@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 MD to HWPX Converter v2.0
 규칙북 기반 변환기

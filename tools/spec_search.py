@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 Keyword search over HWPX spec chunks with BM25, synonyms, and optional
 sentence-level compaction.

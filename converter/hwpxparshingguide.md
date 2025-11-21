@@ -318,3 +318,7 @@ HWPX 파싱의 핵심은:
 3. section.xml에서 본문 내용 추출
 4. ID 참조를 통해 본문과 서식 연결
 5. Python 객체로 구조화하여 활용
+
+## Phase 1.5 추가 메모
+- 머리말/꼬리말: `section0.xml`의 `hp:header`/`hp:footer` ctrl에서 `paraPrIDRef`/`charPrIDRef`가 header.xml 정의와 일치하는지 확인(현행 8/9가 기관 스타일과 다를 수 있음).
+- 표 테두리: header.xml에 borderFill 7~18(헤더 배경 + DOUBLE_SLIM 조합)이 정의되어 있으므로, 셀의 `borderFillIDRef`를 파싱할 때 해당 ID 맵과 함께 비교하면 스타일 diff를 추적하기 쉽다.

@@ -119,3 +119,30 @@ unzip -p output/test_final.hwpx Contents/section0.xml | sed -n '1,120p'
 ---
 
 (이 섹션은 GitHub Copilot가 2025-11-18 기준 머리말/꼬리말 관련 트러블슈팅 상황을 정리한 것입니다.)
+
+## 표 헤더/본문 보더·색상 어긋날 때 (Phase 1.5)
+
+### 증상
+- 헤더 행 배경(연보라) 누락, 이중실선이 일부 셀에만 적용.
+- 오른쪽 열 상/하 보더가 다른 열과 다르게 얇은 실선 혹은 없음으로 표시.
+- 중간 행 하단이 모두 굵은 실선으로 깔리거나 마지막 행만 얇은 실선으로 남는 등 행·열별 보더 불일치.
+
+### 확인 포인트
+1. `Contents/header.xml`의 borderFill 정의:
+   - Tier1 샘플 기준 double-slim 세트: id 12~17 (위 DOUBLE_SLIM 0.5mm, 좌·우 0.12mm 조합).
+   - 헤더 배경용 id 7(연보라 + top SOLID 0.12 / bottom DOUBLE 0.5 / 좌·우 없음).
+2. `Contents/section0.xml`에서 테이블 셀별 borderFillIDRef:
+   - 헤더: 좌/중/우 = 12/13/14, 본문 중간행: 15/16/17, 마지막행: 8(얇은 실선).
+3. 마크다운 표 제목 뒤에 빈 줄이 있는지 여부 (빈 줄이 있으면 과거 버전에서 표 감지 실패 가능).
+
+### 수정/우회 절차
+1. Tier1 샘플(`validator/tier_test_inputmodel/(2-1)test_inputmodel.hwpx`)과 현재 산출물의 `header.xml`을 diff해 12~17 정의가 동일한지 확인.
+2. `section0.xml`에서 표 헤더/본문 각 셀의 `borderFillIDRef`를 행·열별로 점검:
+   - 헤더 행: 좌 12, 중 13, 우 14
+   - 본문 중간행: 좌 15, 중 16, 우 17
+   - 마지막 행: 8
+3. 필요 시 새로운 borderFill ID(19+)를 추가해 오른쪽 열 전용/마지막 행 전용 테두리를 분리하고, `_append_markdown_table`의 매핑을 조정.
+4. 헤더 배경이 사라지면 id 7을 헤더 행에 강제 적용하거나, 테이블 전체 borderFill이 덮어쓰지 않는지 확인.
+
+### 참고
+- 최신 파서는 `<표 제목 : ...>` 뒤의 빈 줄을 건너뛰고 파이프로 시작하는 줄을 표로 인식함. 탭은 스페이스로 자동 치환됨.

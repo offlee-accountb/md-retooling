@@ -1540,6 +1540,26 @@ def _append_markdown_table(
         tr = ET.SubElement(tbl, _q("hp", "tr"))
         padded = list(row_cells) + [""] * (col_cnt - len(row_cells))
         for col_idx, cell_text in enumerate(padded[:col_cnt]):
+            if is_header:
+                # 헤더: top DOUBLE_SLIM, bottom 얇은 실선
+                if col_idx == 0:
+                    border_fill = "12"
+                elif col_idx == col_cnt - 1:
+                    border_fill = "14"
+                else:
+                    border_fill = "13"
+            else:
+                if is_last:
+                    # 마지막 행: 상/하 모두 얇은 실선 (0.12mm)
+                    border_fill = "8"
+                else:
+                    # 중간 행: top SOLID 0.5, bottom DOUBLE_SLIM 0.5
+                    if col_idx == 0:
+                        border_fill = "15"
+                    elif col_idx == col_cnt - 1:
+                        border_fill = "17"
+                    else:
+                        border_fill = "16"
             tc = ET.SubElement(
                 tr,
                 _q("hp", "tc"),
@@ -1550,7 +1570,7 @@ def _append_markdown_table(
                     "protect": "0",
                     "editable": "0",
                     "dirty": "0",
-                    "borderFillIDRef": "7" if is_header else ("9" if is_last else "8"),
+                    "borderFillIDRef": border_fill,
                 },
             )
             sub_list = ET.SubElement(
@@ -1940,10 +1960,10 @@ def build_header_xml() -> bytes:
         7,
         fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
         borders={
-            "top": ("SOLID", "0.5 mm"),
+            "top": ("SOLID", "0.12 mm"),
             "bottom": ("DOUBLE", "0.5 mm"),
-            "left": ("NONE", "0.1 mm"),
-            "right": ("NONE", "0.1 mm"),
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
         },
     )
     add_border_fill_custom(
@@ -1951,8 +1971,8 @@ def build_header_xml() -> bytes:
         borders={
             "top": ("SOLID", "0.12 mm"),
             "bottom": ("SOLID", "0.12 mm"),
-            "left": ("NONE", "0.1 mm"),
-            "right": ("NONE", "0.1 mm"),
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
         },
     )
     add_border_fill_custom(
@@ -1960,8 +1980,8 @@ def build_header_xml() -> bytes:
         borders={
             "top": ("SOLID", "0.12 mm"),
             "bottom": ("SOLID", "0.5 mm"),
-            "left": ("NONE", "0.1 mm"),
-            "right": ("NONE", "0.1 mm"),
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
         },
     )
     add_border_fill_custom(
@@ -1973,8 +1993,72 @@ def build_header_xml() -> bytes:
             "right": ("DOTTED", "0.5 mm"),
         },
     )
+    # Tier1 샘플과 맞춘 double-slim 세트
+    add_border_fill_custom(
+        12,
+        borders={
+            "left": ("NONE", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        13,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        14,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("NONE", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        15,
+        borders={
+            "left": ("NONE", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        16,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        17,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("NONE", "0.12 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        18,
+        borders={
+            "left": ("DASH", "0.12 mm"),
+            "right": ("DASH", "0.12 mm"),
+            "top": ("DASH", "0.12 mm"),
+            "bottom": ("DASH", "0.12 mm"),
+        },
+    )
 
-    border_fills.set("itemCnt", "10")
+    border_fills.set("itemCnt", "18")
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})

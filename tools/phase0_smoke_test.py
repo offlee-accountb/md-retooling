@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Phase 0 end-to-end smoke test.
 
 Steps
