@@ -170,6 +170,12 @@ SUMMARY_DESC_STYLE_ID = "18"
 TABLE_BODY_CHAR_ID = "11"
 TABLE_HEADER_CHAR_ID = "12"
 
+# Dedicated borderFill IDs for non-standard tables
+TITLE_TABLE_SPACER_BORDER_ID = "101"
+TITLE_TABLE_BODY_BORDER_ID = "102"
+EMPH_TABLE_BORDER_ID = "103"
+SUMMARY_TABLE_BORDER_ID = "104"
+
 # Spacer paragraph mapping: certain BlockType 앞에 여백용 문단 삽입
 SPACER_CHAR_MAP = {
     # 휴먼명조 계열 spacer (test_inputmodel 기반)
@@ -1266,7 +1272,7 @@ def _append_title_table(
         {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": total_height, "heightRelTo": "ABSOLUTE", "protect": "0"},
     )
     ET.SubElement(
-        tbl,
+    ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "0"})
         _q("hp", "pos"),
         {
             "treatAsChar": "0",
@@ -1292,7 +1298,7 @@ def _append_title_table(
             "char_id": TITLE_TABLE_SPACER_CHAR_ID,
             "cell_margin": {"left": "0", "right": "0", "top": "0", "bottom": "0"},
             "cell_height": TITLE_TABLE_ROW_HEIGHTS[0],
-            "border_fill": "5",
+            "border_fill": TITLE_TABLE_SPACER_BORDER_ID,
             "has_margin": "0",
         },
         {
@@ -1302,7 +1308,7 @@ def _append_title_table(
             "char_id": RUN_CHAR_OVERRIDE_MAP[BlockType.TITLE],
             "cell_margin": {"left": "1417", "right": "1417", "top": "141", "bottom": "141"},
             "cell_height": TITLE_TABLE_ROW_HEIGHTS[1],
-            "border_fill": "4",
+            "border_fill": TITLE_TABLE_BODY_BORDER_ID,
             "has_margin": "1",
         },
         {
@@ -1312,7 +1318,7 @@ def _append_title_table(
             "char_id": TITLE_TABLE_SPACER_CHAR_ID,
             "cell_margin": {"left": "0", "right": "0", "top": "0", "bottom": "0"},
             "cell_height": TITLE_TABLE_ROW_HEIGHTS[2],
-            "border_fill": "5",
+            "border_fill": TITLE_TABLE_SPACER_BORDER_ID,
             "has_margin": "0",
         },
     ]
@@ -1409,7 +1415,7 @@ def _append_emphasis_table(
         char_id=RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS],
         cell_margin={"left": "566", "right": "566", "top": "566", "bottom": "566"},
         cell_height=EMPH_TABLE_ROW_HEIGHT,
-        border_fill="6",
+        border_fill=EMPH_TABLE_BORDER_ID,
         has_margin="1",
         p_id=p_id,
         secpr_attached=secpr_attached,
@@ -1536,37 +1542,48 @@ def _append_markdown_table(
     if remainder > 0:
         col_widths[-1] += remainder
 
-    def _add_row(row_cells: List[str], *, is_header: bool, is_last: bool, row_idx: int, p_counter: int) -> int:
+    TABLE_HEADER_BORDERS = ("12", "13", "14")
+    TABLE_BODY_TOP_BORDERS = ("9", "10", "11")
+    TABLE_BODY_MIDDLE_BORDERS = ("4", "3", "5")
+    TABLE_BODY_BOTTOM_BORDERS = ("6", "7", "8")
+
+    def _pick_border_id(border_ids: tuple[str, str, str], col_idx: int) -> str:
+        left_id, mid_id, right_id = border_ids
+        if col_cnt == 1:
+            return mid_id
+        if col_idx == 0:
+            return left_id
+        if col_idx == col_cnt - 1:
+            return right_id
+        return mid_id
+
+    def _body_border_for_row(row_idx: int) -> tuple[str, str, str]:
+        body_rows = len(block.rows)
+        if body_rows == 0:
+            return TABLE_BODY_BOTTOM_BORDERS
+        if body_rows == 1:
+            return TABLE_BODY_BOTTOM_BORDERS
+        body_idx = row_idx - 1
+        if body_idx == 0:
+            return TABLE_BODY_TOP_BORDERS
+        if body_idx == body_rows - 1:
+            return TABLE_BODY_BOTTOM_BORDERS
+        return TABLE_BODY_MIDDLE_BORDERS
+
+    cell_margin_attrs = {"left": "510", "right": "510", "top": "141", "bottom": "141"}
+
+    def _add_row(row_cells: List[str], *, is_header: bool, row_idx: int, border_ids: tuple[str, str, str], p_counter: int) -> int:
         tr = ET.SubElement(tbl, _q("hp", "tr"))
         padded = list(row_cells) + [""] * (col_cnt - len(row_cells))
         for col_idx, cell_text in enumerate(padded[:col_cnt]):
-            if is_header:
-                # 헤더: top DOUBLE_SLIM, bottom 얇은 실선
-                if col_idx == 0:
-                    border_fill = "12"
-                elif col_idx == col_cnt - 1:
-                    border_fill = "14"
-                else:
-                    border_fill = "13"
-            else:
-                if is_last:
-                    # 마지막 행: 상/하 모두 얇은 실선 (0.12mm)
-                    border_fill = "8"
-                else:
-                    # 중간 행: top SOLID 0.5, bottom DOUBLE_SLIM 0.5
-                    if col_idx == 0:
-                        border_fill = "15"
-                    elif col_idx == col_cnt - 1:
-                        border_fill = "17"
-                    else:
-                        border_fill = "16"
+            border_fill = _pick_border_id(border_ids, col_idx)
             tc = ET.SubElement(
                 tr,
                 _q("hp", "tc"),
                 {
                     "name": "",
                     "header": "0",
-                    "hasMargin": "1",
+                    "hasMargin": "0",
                     "protect": "0",
                     "editable": "0",
                     "dirty": "0",
@@ -1610,16 +1627,17 @@ def _append_markdown_table(
             ET.SubElement(
                 tc,
                 _q("hp", "cellMargin"),
-                {"left": "283", "right": "283", "top": "283", "bottom": "283"},
+                cell_margin_attrs,
             )
             p_counter += 1
         return p_counter
 
     p_counter = p_id
-    p_counter = _add_row(block.header, is_header=True, is_last=False if block.rows else True, row_idx=0, p_counter=p_counter)
+    p_counter = _add_row(block.header, is_header=True, row_idx=0, border_ids=TABLE_HEADER_BORDERS, p_counter=p_counter)
     for idx, row in enumerate(block.rows):
-        is_last = idx == len(block.rows) - 1
-        p_counter = _add_row(row, is_header=False, is_last=is_last, row_idx=idx + 1, p_counter=p_counter)
+        row_idx = idx + 1
+        border_ids = _body_border_for_row(row_idx)
+        p_counter = _add_row(row, is_header=False, row_idx=row_idx, border_ids=border_ids, p_counter=p_counter)
 
     return p_counter, table_id + 1, secpr_attached
 
@@ -1667,7 +1685,7 @@ def _append_summary_table(
             "rowCnt": "1",
             "colCnt": "1",
             "cellSpacing": "0",
-            "borderFillIDRef": "10",
+            "borderFillIDRef": SUMMARY_TABLE_BORDER_ID,
             "noAdjust": "0",
         },
     )
@@ -1714,7 +1732,7 @@ def _append_summary_table(
             "protect": "0",
             "editable": "0",
             "dirty": "0",
-            "borderFillIDRef": "10",
+            "borderFillIDRef": SUMMARY_TABLE_BORDER_ID,
         },
     )
     sub_list = ET.SubElement(
@@ -1889,10 +1907,12 @@ def build_header_xml() -> bytes:
     for lang in ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]:
         add_fontface(lang)
 
-    # borderFills: 최소 2개 필요 (참조 파일 기준)
+    # borderFills: Phase1.5 requires the reference table palette plus a few custom fills
     border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "0"})
+    border_fill_count = 0
 
     def add_border_fill(bf_id: int, *, fill_brush: dict | None = None) -> None:
+        nonlocal border_fill_count
         bf = ET.SubElement(
             border_fills,
             _q("hh", "borderFill"),
@@ -1914,13 +1934,7 @@ def build_header_xml() -> bytes:
         if fill_brush is not None:
             brush = ET.SubElement(bf, _q("hc", "fillBrush"))
             ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
-
-    add_border_fill(1)
-    add_border_fill(2, fill_brush={"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
-    add_border_fill(3)
-    add_border_fill(4)
-    add_border_fill(5, fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"})
-    add_border_fill(6, fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"})
+        border_fill_count += 1
 
     def add_border_fill_custom(
         bf_id: int,
@@ -1930,6 +1944,7 @@ def build_header_xml() -> bytes:
     ) -> None:
         """borders={'top':('SOLID','0.5 mm'), 'bottom':('DOUBLE','0.5 mm')}"""
 
+        nonlocal border_fill_count
         bf = ET.SubElement(
             border_fills,
             _q("hh", "borderFill"),
@@ -1943,9 +1958,11 @@ def build_header_xml() -> bytes:
         )
         ET.SubElement(bf, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
         ET.SubElement(bf, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
+
         def _add_edge(tag: str, default_type: str = "NONE", default_width: str = "0.1 mm") -> None:
             typ, width = (borders.get(tag) if borders and tag in borders else (default_type, default_width))
             ET.SubElement(bf, _q("hh", f"{tag}Border"), {"type": typ, "width": width, "color": "#000000"})
+
         _add_edge("left")
         _add_edge("right")
         _add_edge("top")
@@ -1954,81 +1971,37 @@ def build_header_xml() -> bytes:
         if fill_brush is not None:
             brush = ET.SubElement(bf, _q("hc", "fillBrush"))
             ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
+        border_fill_count += 1
 
-    # 표/요약표용 borderFill
-    add_border_fill_custom(
-        7,
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-        borders={
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("DOUBLE", "0.5 mm"),
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-        },
-    )
-    add_border_fill_custom(
-        8,
-        borders={
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-        },
-    )
-    add_border_fill_custom(
-        9,
-        borders={
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-        },
-    )
-    add_border_fill_custom(
-        10,
-        borders={
-            "top": ("DOTTED", "0.5 mm"),
-            "bottom": ("DOTTED", "0.5 mm"),
-            "left": ("DOTTED", "0.5 mm"),
-            "right": ("DOTTED", "0.5 mm"),
-        },
-    )
-    # Tier1 샘플과 맞춘 double-slim 세트
-    add_border_fill_custom(
-        12,
-        borders={
-            "left": ("NONE", "0.12 mm"),
-            "right": ("SOLID", "0.12 mm"),
-            "top": ("DOUBLE_SLIM", "0.5 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        13,
-        borders={
-            "left": ("SOLID", "0.12 mm"),
-            "right": ("SOLID", "0.12 mm"),
-            "top": ("DOUBLE_SLIM", "0.5 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        14,
-        borders={
-            "left": ("SOLID", "0.12 mm"),
-            "right": ("NONE", "0.12 mm"),
-            "top": ("DOUBLE_SLIM", "0.5 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
+    add_border_fill(1)
+    add_border_fill(2, fill_brush={"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
+
+    reference_borders: list[tuple[int, dict[str, tuple[str, str]], dict | None]] = [
+        (3, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (4, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (5, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (6, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
+        (7, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
+        (8, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
+        (9, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (10, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (11, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
+        (12, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
+        (13, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
+        (14, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
+    ]
+    for bf_id, borders, fill in reference_borders:
+        add_border_fill_custom(bf_id, borders=borders, fill_brush=fill)
+
     add_border_fill_custom(
         15,
         borders={
-            "left": ("NONE", "0.12 mm"),
-            "right": ("SOLID", "0.12 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
+            "left": ("NONE", "0.1 mm"),
+            "right": ("NONE", "0.1 mm"),
+            "top": ("NONE", "0.1 mm"),
+            "bottom": ("NONE", "0.1 mm"),
         },
+        fill_brush={"faceColor": "none", "hatchColor": "#000000", "alpha": "0"},
     )
     add_border_fill_custom(
         16,
@@ -2038,6 +2011,7 @@ def build_header_xml() -> bytes:
             "top": ("SOLID", "0.5 mm"),
             "bottom": ("DOUBLE_SLIM", "0.5 mm"),
         },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
     )
     add_border_fill_custom(
         17,
@@ -2047,6 +2021,7 @@ def build_header_xml() -> bytes:
             "top": ("SOLID", "0.5 mm"),
             "bottom": ("DOUBLE_SLIM", "0.5 mm"),
         },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
     )
     add_border_fill_custom(
         18,
@@ -2058,7 +2033,167 @@ def build_header_xml() -> bytes:
         },
     )
 
-    border_fills.set("itemCnt", "18")
+    # Stylebook 표 세트 (170mm 폭, 헤더 배경 연보라, 좌우선 제거)
+    add_border_fill_custom(
+        19,
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        20,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        21,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        22,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("DOUBLE", "0.5 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        23,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("DOUBLE", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+
+    # Stylebook (no vertical lines, uniform per-row)
+    add_border_fill_custom(
+        24,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE", "0.5 mm"),
+        },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+    )
+    add_border_fill_custom(
+        25,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        26,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        27,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE", "0.5 mm"),
+        },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+    )
+    add_border_fill_custom(
+        28,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        29,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+
+    # Row-locked fills (no verticals)
+    add_border_fill_custom(
+        30,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("DOUBLE", "0.5 mm"),
+        },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+    )
+    add_border_fill_custom(
+        31,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+    )
+    add_border_fill_custom(
+        32,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+    )
+    add_border_fill_custom(
+        33,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+
+    # Dedicated fills for converter-specific tables
+    add_border_fill_custom(101, fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"})
+    add_border_fill_custom(102)
+    add_border_fill_custom(103, fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"})
+    add_border_fill_custom(
+        104,
+        borders={
+            "left": ("DOTTED", "0.5 mm"),
+            "right": ("DOTTED", "0.5 mm"),
+            "top": ("DOTTED", "0.5 mm"),
+            "bottom": ("DOTTED", "0.5 mm"),
+        },
+    )
+
+    border_fills.set("itemCnt", str(border_fill_count))
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
