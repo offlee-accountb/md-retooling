@@ -1272,7 +1272,7 @@ def _append_title_table(
         {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": total_height, "heightRelTo": "ABSOLUTE", "protect": "0"},
     )
     ET.SubElement(
-    ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "0"})
+        tbl,
         _q("hp", "pos"),
         {
             "treatAsChar": "0",
@@ -1558,11 +1558,20 @@ def _append_markdown_table(
         return mid_id
 
     def _body_border_for_row(row_idx: int) -> tuple[str, str, str]:
+        """본문 행의 위치에 따라 적절한 borderFill ID 튜플 반환.
+        
+        Pattern (inputmodel 분석 결과):
+        - 헤더 바로 다음 행 (body_idx=0): TOP (9,10,11) - 상단 이중선
+        - 본문 마지막 행: BOTTOM (6,7,8) - 하단 굵은 실선
+        - 본문 중간 행: MIDDLE (4,3,5) - 일반 실선
+        - 본문 1행만 있는 경우: TOP 우선 (헤더 아래 이중선 필요)
+        """
         body_rows = len(block.rows)
         if body_rows == 0:
             return TABLE_BODY_BOTTOM_BORDERS
         if body_rows == 1:
-            return TABLE_BODY_BOTTOM_BORDERS
+            # 본문 1행만: 헤더 바로 다음이므로 TOP 사용 (이중선)
+            return TABLE_BODY_TOP_BORDERS
         body_idx = row_idx - 1
         if body_idx == 0:
             return TABLE_BODY_TOP_BORDERS
@@ -1752,11 +1761,37 @@ def _append_summary_table(
         },
     )
 
-    for item in block.items:
+    for idx, item in enumerate(block.items):
+        # 첫 번째 항목이 아니면 줄간격용 빈 줄 추가 (맑은 고딕 4pt, space 1칸)
+        if idx > 0:
+            spacer_p = ET.SubElement(
+                sub_list,
+                _q("hp", "p"),
+                {
+                    "id": str(p_counter),
+                    "paraPrIDRef": "0",
+                    "styleIDRef": "0",
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0",
+                },
+            )
+            spacer_run = ET.SubElement(spacer_p, _q("hp", "run"), {"charPrIDRef": "3"})  # 맑은 고딕 4pt
+            spacer_t = ET.SubElement(spacer_run, _q("hp", "t"))
+            spacer_t.text = " "
+            p_counter += 1
+
         para_pr = SUMMARY_BODY_PARA_ID if item.type == BlockType.BODY else SUMMARY_DESC_PARA_ID
         style_pr = SUMMARY_BODY_STYLE_ID if item.type == BlockType.BODY else SUMMARY_DESC_STYLE_ID
         char_id = "7" if item.type == BlockType.BODY else TABLE_BODY_CHAR_ID
         bold_id = "13" if item.type == BlockType.BODY else "12"
+        
+        # 출력 텍스트: 본문은 ◦, 설명은 - 붙임
+        if item.type == BlockType.BODY:
+            display_text = f"◦ {item.text}"
+        else:
+            display_text = f"- {item.text}"
+        
         p = ET.SubElement(
             sub_list,
             _q("hp", "p"),
@@ -1769,7 +1804,7 @@ def _append_summary_table(
                 "merged": "0",
             },
         )
-        _append_text_with_bold_custom(p, char_id, item.text, bold_id)
+        _append_text_with_bold_custom(p, char_id, display_text, bold_id)
         p_counter += 1
 
     ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "0"})
@@ -2449,9 +2484,9 @@ def build_header_xml() -> bytes:
             {
                 "font_line_height": "0",
                 "snap_to_grid": "1",
-                "margin": {"intent": 2350},
+                "margin": {"intent": 0},
             },
-        ),  # 요약표 본문
+        ),  # 요약표 본문 (들여쓰기 0)
         (
             19,
             "LEFT",
@@ -2459,9 +2494,9 @@ def build_header_xml() -> bytes:
             {
                 "font_line_height": "0",
                 "snap_to_grid": "1",
-                "margin": {"intent": 2650},
+                "margin": {"intent": 500},
             },
-        ),  # 요약표 설명
+        ),  # 요약표 설명 (들여쓰기 5pt)
         (12, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
         (13, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
     ]
