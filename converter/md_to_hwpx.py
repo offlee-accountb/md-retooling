@@ -1959,24 +1959,23 @@ def build_header_xml() -> bytes:
 
     ref_list = ET.SubElement(head, _q("hh", "refList"))
 
-    # fontfaces: 7개 언어 전부 정의 (CRITICAL - Hangul requires all 7 languages)
-    # style_textbook에서 실제로 사용하는 글꼴만 정의:
-    # - id=0: HY헤드라인M
-    # - id=1: 휴먼명조
-    # - id=2: 맑은 고딕
+    # fontfaces: YAML 설정에서 로드
+    # 7개 언어 전부 정의 (CRITICAL - Hangul requires all 7 languages)
+    fonts_list = sorted(CONFIG.fonts, key=lambda x: x.id)
+    font_count = len(fonts_list)
     fontfaces = ET.SubElement(ref_list, _q("hh", "fontfaces"), {"itemCnt": "7"})
 
-    def _add_font(ff_parent, font_id: int, face: str) -> None:
+    def _add_font_from_yaml(ff_parent, font_def) -> None:
         font = ET.SubElement(
             ff_parent,
             _q("hh", "font"),
-            {"id": str(font_id), "face": face, "type": "TTF", "isEmbedded": "0"},
+            {"id": str(font_def.id), "face": font_def.name, "type": font_def.type, "isEmbedded": "0"},
         )
         ET.SubElement(
             font,
             _q("hh", "typeInfo"),
             {
-                "familyType": "FCAT_GOTHIC",
+                "familyType": font_def.family_type,
                 "weight": "5",
                 "proportion": "3",
                 "contrast": "2",
@@ -1988,15 +1987,14 @@ def build_header_xml() -> bytes:
             },
         )
 
-    def add_fontface(lang: str) -> None:
-        ff = ET.SubElement(fontfaces, _q("hh", "fontface"), {"lang": lang, "fontCnt": "3"})
-        _add_font(ff, 0, "HY헤드라인M")
-        _add_font(ff, 1, "휴먼명조")
-        _add_font(ff, 2, "맑은 고딕")
+    def add_fontface_from_yaml(lang: str) -> None:
+        ff = ET.SubElement(fontfaces, _q("hh", "fontface"), {"lang": lang, "fontCnt": str(font_count)})
+        for font_def in fonts_list:
+            _add_font_from_yaml(ff, font_def)
 
     # 7개 언어 모두 추가
     for lang in ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]:
-        add_fontface(lang)
+        add_fontface_from_yaml(lang)
 
     # borderFills: YAML 설정에서 로드 (HWPX_IMPLEMENTATION_NOTES.md 규칙 준수)
     # ⚠️ ID 1은 반드시 색없음 (fillBrush 태그 생략)
@@ -2055,17 +2053,21 @@ def build_header_xml() -> bytes:
 
     border_fills.set("itemCnt", str(border_fill_count))
 
-    # charProperties: 글자 모양 정의 (style_textbook 기준)
+    # charProperties: YAML 설정에서 로드
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
+    char_prop_count = 0
 
-    def add_char_pr(char_id: int, height: int, hangul_font_id: int, *, bold: bool = False) -> None:
+    def add_char_pr_from_yaml(cp_def) -> None:
+        """YAML의 CharProperty를 XML로 변환."""
+        nonlocal char_prop_count
+        font_id = str(cp_def.font_id)
         char = ET.SubElement(
             char_props,
             _q("hh", "charPr"),
             {
-                "id": str(char_id),
-                "height": str(height),
-                "textColor": "#000000",
+                "id": str(cp_def.id),
+                "height": str(cp_def.height_hwp),
+                "textColor": cp_def.text_color,
                 "shadeColor": "none",
                 "useFontSpace": "0",
                 "useKerning": "0",
@@ -2077,13 +2079,13 @@ def build_header_xml() -> bytes:
             char,
             _q("hh", "fontRef"),
             {
-                "hangul": str(hangul_font_id),
-                "latin": str(hangul_font_id),
-                "hanja": str(hangul_font_id),
-                "japanese": str(hangul_font_id),
-                "other": str(hangul_font_id),
-                "symbol": str(hangul_font_id),
-                "user": str(hangul_font_id),
+                "hangul": font_id,
+                "latin": font_id,
+                "hanja": font_id,
+                "japanese": font_id,
+                "other": font_id,
+                "symbol": font_id,
+                "user": font_id,
             },
         )
         ET.SubElement(
@@ -2150,28 +2152,14 @@ def build_header_xml() -> bytes:
             _q("hh", "shadow"),
             {"type": "NONE", "color": "#B2B2B2", "offsetX": "10", "offsetY": "10"},
         )
-        if bold:
+        if cp_def.bold:
             ET.SubElement(char, _q("hh", "bold"))
+        char_prop_count += 1
 
-    char_defs = [
-        (0, 1500, 1, False),   # 본문 휴먼명조 15pt
-        (1, 1000, 2, False),   # spacer 10pt
-        (2, 800, 2, False),    # spacer 8pt
-        (3, 600, 2, False),    # spacer 6pt
-        (4, 400, 2, False),    # spacer 4pt
-        (5, 1500, 0, True),    # 주제목 HY 15pt Bold
-        (6, 1500, 0, False),   # 소제목 HY 15pt
-        (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
-        (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
-        (9, 100, 2, False),    # 1pt filler
-        (10, 1300, 1, False),  # 머리말/꼬리말 휴먼명조 13pt
-        (11, 1100, 2, False),  # 표 본문 맑은고딕 11pt
-        (12, 1100, 2, True),   # 표 헤더 맑은고딕 11pt Bold
-        (13, 1200, 2, True),   # 표/요약표 볼드 맑은고딕 12pt
-    ]
-    for cid, height, font_id, is_bold in char_defs:
-        add_char_pr(cid, height, font_id, bold=is_bold)
-    char_props.set("itemCnt", str(len(char_defs)))
+    # YAML에서 charProperties 로드 (ID 순서대로)
+    for cp_def in sorted(CONFIG.char_properties, key=lambda x: x.id):
+        add_char_pr_from_yaml(cp_def)
+    char_props.set("itemCnt", str(char_prop_count))
 
     # tabProperties: 3개 (참조 파일 기준)
     tab_props = ET.SubElement(ref_list, _q("hh", "tabProperties"), {"itemCnt": "3"})
@@ -2179,28 +2167,22 @@ def build_header_xml() -> bytes:
     ET.SubElement(tab_props, _q("hh", "tabPr"), {"id": "1", "autoTabLeft": "1", "autoTabRight": "0"})
     ET.SubElement(tab_props, _q("hh", "tabPr"), {"id": "2", "autoTabLeft": "0", "autoTabRight": "1"})
 
-    # paraProperties: 문단 모양 정의 (id 0 = 기본, 나머지는 BlockType/여백용)
+    # paraProperties: YAML 설정에서 로드
     para_props = ET.SubElement(ref_list, _q("hh", "paraProperties"), {"itemCnt": "0"})
+    para_prop_count = 0
 
-    def add_para_pr(
-        para_id: int,
-        horizontal_align: str,
-        line_spacing_value: int,
-        *,
-        font_line_height: str = "0",
-        snap_to_grid: str = "1",
-        margin: Optional[dict] = None,
-        border_fill_id: str = "1",
-    ) -> None:
+    def add_para_pr_from_yaml(pp_def) -> None:
+        """YAML의 ParaProperty를 XML로 변환."""
+        nonlocal para_prop_count
         para = ET.SubElement(
             para_props,
             _q("hh", "paraPr"),
             {
-                "id": str(para_id),
+                "id": str(pp_def.id),
                 "tabPrIDRef": "0",
                 "condense": "0",
-                "fontLineHeight": font_line_height,
-                "snapToGrid": snap_to_grid,
+                "fontLineHeight": "1" if pp_def.font_line_height else "0",
+                "snapToGrid": "0" if not pp_def.snap_to_grid else "1",
                 "suppressLineNumbers": "0",
                 "checked": "0",
             },
@@ -2208,7 +2190,7 @@ def build_header_xml() -> bytes:
         ET.SubElement(
             para,
             _q("hh", "align"),
-            {"horizontal": horizontal_align, "vertical": "BASELINE"},
+            {"horizontal": pp_def.align, "vertical": "BASELINE"},
         )
         ET.SubElement(para, _q("hh", "heading"), {"type": "NONE", "idRef": "0", "level": "0"})
         ET.SubElement(
@@ -2226,23 +2208,25 @@ def build_header_xml() -> bytes:
         )
         ET.SubElement(para, _q("hh", "autoSpacing"), {"eAsianEng": "0", "eAsianNum": "0"})
         margin_el = ET.SubElement(para, _q("hh", "margin"))
-        margin_values = {"intent": "0", "left": "0", "right": "0", "prev": "0", "next": "0"}
-        if margin:
-            for key, value in margin.items():
-                if key in margin_values:
-                    margin_values[key] = str(value)
+        margin_values = {
+            "intent": str(pp_def.indent_hwp),
+            "left": "0",
+            "right": "0",
+            "prev": "0",
+            "next": "0",
+        }
         for key, value in margin_values.items():
             ET.SubElement(margin_el, _q("hc", key), {"value": value, "unit": "HWPUNIT"})
         ET.SubElement(
             para,
             _q("hh", "lineSpacing"),
-            {"type": "PERCENT", "value": str(line_spacing_value), "unit": "PERCENT"},
+            {"type": "PERCENT", "value": str(pp_def.line_spacing_pct), "unit": "PERCENT"},
         )
         ET.SubElement(
             para,
             _q("hh", "border"),
             {
-                "borderFillIDRef": border_fill_id,
+                "borderFillIDRef": "1",
                 "offsetLeft": "0",
                 "offsetRight": "0",
                 "offsetTop": "0",
@@ -2251,91 +2235,12 @@ def build_header_xml() -> bytes:
                 "ignoreMargin": "0",
             },
         )
+        para_prop_count += 1
 
-    para_defs = [
-        (0, "JUSTIFY", 160, {"font_line_height": "1", "snap_to_grid": "0"}),
-        (1, "CENTER", 130, {}),
-        (2, "LEFT", 160, {}),
-        (3, "LEFT", 160, {}),
-        (4, "LEFT", 160, {}),
-        (5, "LEFT", 160, {}),
-        (6, "CENTER", 130, {}),
-        # 예비 paraPr 5종 (Option A 대비)
-        (7, "LEFT", 150, {"font_line_height": "0", "snap_to_grid": "1"}),
-        (
-            8,
-            "LEFT",
-            160,
-            {
-                "font_line_height": "0",
-                "snap_to_grid": "1",
-                # DESC2 hanging indent 37.5pt → 3750 HWP units.
-                "margin": {"intent": -3750},
-            },
-        ),
-        (
-            9,
-            "JUSTIFY",
-            160,
-            {
-                "font_line_height": "0",
-                "snap_to_grid": "0",
-                # Body paragraphs target 30pt indent (3000 HWP units).
-                "margin": {"intent": -3000},
-            },
-        ),
-        (
-            10,
-            "LEFT",
-            160,
-            {
-                "font_line_height": "0",
-                "snap_to_grid": "1",
-                # DESC3 indent tuned to 35pt (3500 HWP units) while staying left aligned.
-                "margin": {"intent": -3500},
-            },
-        ),
-        (11, "LEFT", 135, {"font_line_height": "0", "snap_to_grid": "1"}),
-        (12, "RIGHT", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
-        (13, "RIGHT", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
-        (14, "CENTER", 160, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 제목
-        (15, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 헤더
-        (16, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 표 본문
-        (17, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 요약표 셀 wrapper
-        (
-            18,
-            "LEFT",
-            130,
-            {
-                "font_line_height": "0",
-                "snap_to_grid": "1",
-                "margin": {"intent": 0},
-            },
-        ),  # 요약표 본문 (들여쓰기 0)
-        (
-            19,
-            "LEFT",
-            130,
-            {
-                "font_line_height": "0",
-                "snap_to_grid": "1",
-                "margin": {"intent": 500},
-            },
-        ),  # 요약표 설명 (들여쓰기 5pt)
-        (12, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
-        (13, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
-    ]
-    for pid, align, spacing, extra in para_defs:
-        add_para_pr(
-            pid,
-            align,
-            spacing,
-            font_line_height=extra.get("font_line_height", "0"),
-            snap_to_grid=extra.get("snap_to_grid", "1"),
-            margin=extra.get("margin"),
-            border_fill_id=extra.get("border_fill_id", "1"),
-        )
-    para_props.set("itemCnt", str(len(para_defs)))
+    # YAML에서 paraProperties 로드 (ID 순서대로)
+    for pp_def in sorted(CONFIG.para_properties, key=lambda x: x.id):
+        add_para_pr_from_yaml(pp_def)
+    para_props.set("itemCnt", str(para_prop_count))
 
     # numberings: 번호 매기기 정의 (참조 파일 기준)
     numberings = ET.SubElement(ref_list, _q("hh", "numberings"), {"itemCnt": "1"})
