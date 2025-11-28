@@ -1998,17 +1998,20 @@ def build_header_xml() -> bytes:
     for lang in ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]:
         add_fontface(lang)
 
-    # borderFills: Phase1.5 requires the reference table palette plus a few custom fills
+    # borderFills: YAML 설정에서 로드 (HWPX_IMPLEMENTATION_NOTES.md 규칙 준수)
+    # ⚠️ ID 1은 반드시 색없음 (fillBrush 태그 생략)
+    # ⚠️ ID는 1부터 시작, 연속 사용 필수
     border_fills = ET.SubElement(ref_list, _q("hh", "borderFills"), {"itemCnt": "0"})
     border_fill_count = 0
 
-    def add_border_fill(bf_id: int, *, fill_brush: dict | None = None) -> None:
+    def add_border_fill_from_yaml(bf_def) -> None:
+        """YAML의 BorderFillDef를 XML로 변환."""
         nonlocal border_fill_count
         bf = ET.SubElement(
             border_fills,
             _q("hh", "borderFill"),
             {
-                "id": str(bf_id),
+                "id": str(bf_def.id),
                 "threeD": "0",
                 "shadow": "0",
                 "centerLine": "NONE",
@@ -2017,302 +2020,38 @@ def build_header_xml() -> bytes:
         )
         ET.SubElement(bf, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
         ET.SubElement(bf, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-        ET.SubElement(bf, _q("hh", "leftBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-        ET.SubElement(bf, _q("hh", "rightBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-        ET.SubElement(bf, _q("hh", "topBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-        ET.SubElement(bf, _q("hh", "bottomBorder"), {"type": "NONE", "width": "0.1 mm", "color": "#000000"})
-        ET.SubElement(bf, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
-        if fill_brush is not None:
-            brush = ET.SubElement(bf, _q("hc", "fillBrush"))
-            ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
-        border_fill_count += 1
-
-    def add_border_fill_custom(
-        bf_id: int,
-        *,
-        fill_brush: dict | None = None,
-        borders: dict[str, tuple[str, str]] | None = None,
-    ) -> None:
-        """borders={'top':('SOLID','0.5 mm'), 'bottom':('DOUBLE','0.5 mm')}"""
-
-        nonlocal border_fill_count
-        bf = ET.SubElement(
-            border_fills,
-            _q("hh", "borderFill"),
-            {
-                "id": str(bf_id),
-                "threeD": "0",
-                "shadow": "0",
-                "centerLine": "NONE",
-                "breakCellSeparateLine": "0",
-            },
-        )
-        ET.SubElement(bf, _q("hh", "slash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-        ET.SubElement(bf, _q("hh", "backSlash"), {"type": "NONE", "Crooked": "0", "isCounter": "0"})
-
-        def _add_edge(tag: str, default_type: str = "NONE", default_width: str = "0.1 mm") -> None:
-            typ, width = (borders.get(tag) if borders and tag in borders else (default_type, default_width))
+        
+        # 테두리 설정
+        def _add_edge(tag: str) -> None:
+            if bf_def.borders and tag in bf_def.borders:
+                typ, width = bf_def.borders[tag]
+            else:
+                typ, width = "NONE", "0.1 mm"
             ET.SubElement(bf, _q("hh", f"{tag}Border"), {"type": typ, "width": width, "color": "#000000"})
-
+        
         _add_edge("left")
         _add_edge("right")
         _add_edge("top")
         _add_edge("bottom")
         ET.SubElement(bf, _q("hh", "diagonal"), {"type": "SOLID", "width": "0.1 mm", "color": "#000000"})
-        if fill_brush is not None:
+        
+        # 채우기 설정 (fill이 있을 때만 fillBrush 추가)
+        # ⚠️ ID 1은 fill=null이어야 함 → fillBrush 태그 없음
+        if bf_def.fill is not None:
+            face_color = bf_def.fill.get("face_color", "none")
+            hatch_color = bf_def.fill.get("hatch_color", "#000000")
             brush = ET.SubElement(bf, _q("hc", "fillBrush"))
-            ET.SubElement(brush, _q("hc", "winBrush"), fill_brush)
+            ET.SubElement(brush, _q("hc", "winBrush"), {
+                "faceColor": face_color,
+                "hatchColor": hatch_color,
+                "alpha": "0",
+            })
+        
         border_fill_count += 1
 
-    add_border_fill(1)
-    add_border_fill(2, fill_brush={"faceColor": "none", "hatchColor": "#999999", "alpha": "0"})
-
-    reference_borders: list[tuple[int, dict[str, tuple[str, str]], dict | None]] = [
-        (3, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (4, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (5, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (6, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
-        (7, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
-        (8, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.12 mm"), "bottom": ("SOLID", "0.5 mm")}, None),
-        (9, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (10, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (11, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("DOUBLE_SLIM", "0.5 mm"), "bottom": ("SOLID", "0.12 mm")}, None),
-        (12, {"left": ("NONE", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
-        (13, {"left": ("SOLID", "0.12 mm"), "right": ("SOLID", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
-        (14, {"left": ("SOLID", "0.12 mm"), "right": ("NONE", "0.12 mm"), "top": ("SOLID", "0.5 mm"), "bottom": ("DOUBLE_SLIM", "0.5 mm")}, {"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"}),
-    ]
-    for bf_id, borders, fill in reference_borders:
-        add_border_fill_custom(bf_id, borders=borders, fill_brush=fill)
-
-    add_border_fill_custom(
-        15,
-        borders={
-            "left": ("NONE", "0.1 mm"),
-            "right": ("NONE", "0.1 mm"),
-            "top": ("NONE", "0.1 mm"),
-            "bottom": ("NONE", "0.1 mm"),
-        },
-        fill_brush={"faceColor": "none", "hatchColor": "#000000", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        16,
-        borders={
-            "left": ("SOLID", "0.12 mm"),
-            "right": ("SOLID", "0.12 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        17,
-        borders={
-            "left": ("SOLID", "0.12 mm"),
-            "right": ("NONE", "0.12 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE_SLIM", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        18,
-        borders={
-            "left": ("DASH", "0.12 mm"),
-            "right": ("DASH", "0.12 mm"),
-            "top": ("DASH", "0.12 mm"),
-            "bottom": ("DASH", "0.12 mm"),
-        },
-    )
-
-    # Stylebook 표 세트 (170mm 폭, 헤더 배경 연보라, 좌우선 제거)
-    add_border_fill_custom(
-        19,
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE", "0.5 mm"),
-        },
-    )
-    add_border_fill_custom(
-        20,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        21,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-    )
-    add_border_fill_custom(
-        22,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("DOUBLE", "0.5 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        23,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("DOUBLE", "0.5 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-    )
-
-    # Stylebook (no vertical lines, uniform per-row)
-    add_border_fill_custom(
-        24,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        25,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        26,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-    )
-    add_border_fill_custom(
-        27,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        28,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        29,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-    )
-
-    # Row-locked fills (no verticals)
-    add_border_fill_custom(
-        30,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("DOUBLE", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        31,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-    )
-    add_border_fill_custom(
-        32,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.5 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    add_border_fill_custom(
-        33,
-        borders={
-            "left": ("NONE", "0 mm"),
-            "right": ("NONE", "0 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.5 mm"),
-        },
-    )
-
-    # Dedicated fills for converter-specific tables
-    # ID 34: 대제목 1,3행 spacer - 연보라 배경 + 테두리 NONE
-    add_border_fill_custom(
-        34,
-        borders={
-            "left": ("NONE", "0.12 mm"),
-            "right": ("NONE", "0.12 mm"),
-            "top": ("NONE", "0.12 mm"),
-            "bottom": ("NONE", "0.12 mm"),
-        },
-        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-    )
-    # ID 35: 대제목 본문 (2행) - 테두리 NONE, 배경 없음
-    add_border_fill_custom(
-        35,
-        borders={
-            "left": ("NONE", "0.12 mm"),
-            "right": ("NONE", "0.12 mm"),
-            "top": ("NONE", "0.12 mm"),
-            "bottom": ("NONE", "0.12 mm"),
-        },
-    )
-    # ID 36: 강조 표 - 연두 배경 + 0.12mm 실선 테두리
-    add_border_fill_custom(
-        36,
-        borders={
-            "left": ("SOLID", "0.12 mm"),
-            "right": ("SOLID", "0.12 mm"),
-            "top": ("SOLID", "0.12 mm"),
-            "bottom": ("SOLID", "0.12 mm"),
-        },
-        fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"},
-    )
-    # ID 37: 요약표 - 점선 0.12mm 테두리
-    add_border_fill_custom(
-        37,
-        borders={
-            "left": ("DOT", "0.12 mm"),
-            "right": ("DOT", "0.12 mm"),
-            "top": ("DOT", "0.12 mm"),
-            "bottom": ("DOT", "0.12 mm"),
-        },
-    )
+    # YAML에서 borderFills 로드 (ID 순서대로)
+    for bf_def in sorted(CONFIG.border_fills, key=lambda x: x.id):
+        add_border_fill_from_yaml(bf_def)
 
     border_fills.set("itemCnt", str(border_fill_count))
 

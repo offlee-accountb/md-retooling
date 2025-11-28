@@ -420,19 +420,19 @@ tables:
   # 주제목 표 전용
   title_table:
     row_heights_hwp: [200, 3174, 200] # spacer, body, spacer
-    spacer_border_id: 101
-    body_border_id: 102
+    spacer_border_id: 34
+    body_border_id: 35
     spacer_char_id: 9
 
   # 강조 표 전용
   emphasis_table:
     height_hwp: 2632
     row_height_hwp: 521
-    border_id: 103
+    border_id: 36
 
   # 요약표 전용
   summary_table:
-    border_id: 104
+    border_id: 37
     body_para_id: 18
     desc_para_id: 19
     body_style_id: 17
@@ -442,14 +442,26 @@ tables:
 # =============================================================================
 # 테두리/채우기 정의 (borderFills)
 # =============================================================================
-# 기본 팔레트 (ID 1-18) + 스타일북 세트 (19-33) + 커스텀 (101-104)
+# ⚠️ HWPX 규칙 (HWPX_IMPLEMENTATION_NOTES.md 참조):
+#   - ID는 1부터 시작 (0은 한글이 무시함)
+#   - ID 1은 반드시 색없음 (fill: null)
+#   - 연속 ID 사용 필수 (1, 2, 3, ... 순서대로)
+#
+# ID 배치:
+#   1: 색없음 (필수 기본값)
+#   2: 기본채우기
+#   3-14: 데이터 표 팔레트
+#   15-18: 확장용
+#   19-33: Stylebook 표 세트
+#   34-37: 변환기 전용 (주제목표, 강조표, 요약표)
 border_fills:
-  # === 기본 (ID 1-2) ===
+  # === ID 1: 색없음 (필수!) ===
   - id: 1
-    name: "빈테두리"
+    name: "색없음"
     borders: null
-    fill: null
+    fill: null  # ⚠️ 반드시 null! fillBrush 태그 생략됨
 
+  # === ID 2: 기본채우기 ===
   - id: 2
     name: "기본채우기"
     borders: null
@@ -457,7 +469,7 @@ border_fills:
       face_color: "none"
       hatch_color: "#999999"
 
-  # === 데이터 표 팔레트 (ID 3-14) ===
+  # === ID 3-14: 데이터 표 팔레트 ===
   - id: 3
     name: "표_중간_전체"
     borders:
@@ -465,6 +477,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 4
     name: "표_중간_좌없음"
@@ -473,6 +486,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 5
     name: "표_중간_우없음"
@@ -481,6 +495,7 @@ border_fills:
       right: [NONE, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 6
     name: "표_하단_좌없음"
@@ -489,6 +504,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.5 mm"]
+    fill: null
 
   - id: 7
     name: "표_하단_전체"
@@ -497,6 +513,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.5 mm"]
+    fill: null
 
   - id: 8
     name: "표_하단_우없음"
@@ -505,6 +522,7 @@ border_fills:
       right: [NONE, "0.12 mm"]
       top: [SOLID, "0.12 mm"]
       bottom: [SOLID, "0.5 mm"]
+    fill: null
 
   - id: 9
     name: "표_본문첫행_좌없음"
@@ -513,6 +531,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [DOUBLE_SLIM, "0.5 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 10
     name: "표_본문첫행_전체"
@@ -521,6 +540,7 @@ border_fills:
       right: [SOLID, "0.12 mm"]
       top: [DOUBLE_SLIM, "0.5 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 11
     name: "표_본문첫행_우없음"
@@ -529,6 +549,7 @@ border_fills:
       right: [NONE, "0.12 mm"]
       top: [DOUBLE_SLIM, "0.5 mm"]
       bottom: [SOLID, "0.12 mm"]
+    fill: null
 
   - id: 12
     name: "표_헤더_좌없음"
@@ -563,20 +584,217 @@ border_fills:
       face_color: "#EBDEF1"
       hatch_color: "#999999"
 
-  # === 커스텀 (ID 101-104) ===
-  - id: 101
-    name: "주제목_spacer"
-    borders: null
+  # === ID 15-18: 확장용 ===
+  - id: 15
+    name: "확장_빈테두리"
+    borders:
+      left: [NONE, "0.1 mm"]
+      right: [NONE, "0.1 mm"]
+      top: [NONE, "0.1 mm"]
+      bottom: [NONE, "0.1 mm"]
+    fill:
+      face_color: "none"
+      hatch_color: "#000000"
+
+  - id: 16
+    name: "확장_헤더1"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE_SLIM, "0.5 mm"]
     fill:
       face_color: "#EBDEF1"
       hatch_color: "#999999"
 
-  - id: 102
-    name: "주제목_body"
-    borders: null
+  - id: 17
+    name: "확장_헤더2"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE_SLIM, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 18
+    name: "확장_점선"
+    borders:
+      left: [DASH, "0.12 mm"]
+      right: [DASH, "0.12 mm"]
+      top: [DASH, "0.12 mm"]
+      bottom: [DASH, "0.12 mm"]
     fill: null
 
-  - id: 103
+  # === ID 19-33: Stylebook 표 세트 ===
+  - id: 19
+    name: "스타일북_헤더"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 20
+    name: "스타일북_중간"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill: null
+
+  - id: 21
+    name: "스타일북_하단"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill: null
+
+  - id: 22
+    name: "스타일북_본문첫행"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [DOUBLE, "0.5 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill: null
+
+  - id: 23
+    name: "스타일북_본문마지막"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [DOUBLE, "0.5 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill: null
+
+  - id: 24
+    name: "스타일북B_헤더"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 25
+    name: "스타일북B_중간"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill: null
+
+  - id: 26
+    name: "스타일북B_하단"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill: null
+
+  - id: 27
+    name: "스타일북C_헤더"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 28
+    name: "스타일북C_중간"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill: null
+
+  - id: 29
+    name: "스타일북C_하단"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill: null
+
+  - id: 30
+    name: "스타일북D_헤더"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 31
+    name: "스타일북D_중간"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill: null
+
+  - id: 32
+    name: "스타일북E_헤더"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 33
+    name: "스타일북E_하단"
+    borders:
+      left: [NONE, "0 mm"]
+      right: [NONE, "0 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+    fill: null
+
+  # === ID 34-37: 변환기 전용 ===
+  - id: 34
+    name: "주제목_spacer"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [NONE, "0.12 mm"]
+      bottom: [NONE, "0.12 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 35
+    name: "주제목_body"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [NONE, "0.12 mm"]
+      bottom: [NONE, "0.12 mm"]
+    fill: null
+
+  - id: 36
     name: "강조표"
     borders:
       left: [SOLID, "0.12 mm"]
@@ -587,13 +805,13 @@ border_fills:
       face_color: "#CDF2E4"
       hatch_color: "#999999"
 
-  - id: 104
+  - id: 37
     name: "요약표"
     borders:
-      left: [DOTTED, "0.12 mm"]
-      right: [DOTTED, "0.12 mm"]
-      top: [DOTTED, "0.12 mm"]
-      bottom: [DOTTED, "0.12 mm"]
+      left: [DOT, "0.12 mm"]
+      right: [DOT, "0.12 mm"]
+      top: [DOT, "0.12 mm"]
+      bottom: [DOT, "0.12 mm"]
     fill: null
 
 # =============================================================================
