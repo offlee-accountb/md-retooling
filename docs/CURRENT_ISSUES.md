@@ -64,34 +64,47 @@
 
 (이 섹션은 GitHub Copilot가 2025-11-18 기준 상태를 요약한 것입니다. 이후 수정 시 날짜/상태를 갱신해 주세요.)
 
-## [해결됨] 2025-11-27 – Phase 1.5 표 색상/테두리 수정 완료
+## [해결됨] 2025-11-28 – Phase 1.5 표 색상/테두리 수정 완료
 
 ### 해결된 문제
 
-1. **대제목 표 1,3행**: 연보라 배경(#EBDEF1) + 0.12mm 실선 테두리 적용
-2. **대제목 표 본문(2행)**: 0.12mm 실선 테두리 (배경 없음)
-3. **강조 표**: 연두 배경(#CDF2E4) + 0.4mm 실선 테두리 적용
-4. **요약표**: 점선(DOTTED) 0.12mm 테두리 적용
+1. **대제목 표 1,3행**: 연보라 배경(#EBDEF1) + 테두리 없음 (NONE)
+2. **대제목 표 본문(2행)**: 테두리 없음 (NONE), 배경 없음
+3. **강조 표**: 연두 배경(#CDF2E4) + 0.12mm 실선 테두리 적용
+4. **요약표**: 점선(DOT) 0.12mm 테두리 적용
 5. **꼬리말**: 하드코딩된 "꼬리말 테스트" → 빈 문자열로 변경
 
-### 수정 내용
+### 최종 수정 내용 (2025-11-28)
 
-- `converter/md_to_hwpx.py`의 `add_border_fill_custom()` 호출부 수정
-  - ID 101: `borders` 파라미터 추가 (SOLID 0.12mm) + 연보라 fillBrush
-  - ID 102: `borders` 파라미터 추가 (SOLID 0.12mm)
-  - ID 103: `borders` 파라미터 추가 (SOLID 0.4mm) + 연두 fillBrush
-  - ID 104: 점선 두께 0.5mm → 0.12mm로 수정
-- `_build_header_footer_text()`: 꼬리말 하드코딩 제거
+- `converter/md_to_hwpx.py`의 borderFill ID를 **순차적 ID (34-37)**로 변경
+  - ID 34: 대제목 표 1,3행 spacer (연보라 #EBDEF1 + NONE 테두리)
+  - ID 35: 대제목 표 본문 (NONE 테두리, 배경 없음)
+  - ID 36: 강조 표 (연두 #CDF2E4 + SOLID 0.12mm)
+  - ID 37: 요약표 (DOT 0.12mm 점선)
+- `<hp:tbl borderFillIDRef="3">`: 표 외곽 테두리는 기존 SOLID ID 3 사용
+- `<hp:tc borderFillIDRef="XX">`: 각 셀은 개별 borderFill ID 참조
+
+### 핵심 발견 사항 (HWPX 스펙 관련)
+
+1. **LineType2 열거형**: `DOTTED`가 아니라 `DOT`가 올바른 값
+   - 잘못된 값 사용 시 테두리가 렌더링되지 않음
+2. **borderFill ID 순차성**: ID를 101+ 등 큰 값으로 점프하면 일부 환경에서 인식 안 될 수 있음
+   - 기존 ID (1-33) 바로 다음인 34-37을 사용하는 것이 안전
+3. **표 구조 분리**:
+   - `<hp:tbl borderFillIDRef>`: 표 전체 외곽 테두리 (container)
+   - `<hp:tc borderFillIDRef>`: 각 셀의 배경/테두리 (cell-level)
 
 ### 주의사항 (AI 인수인계)
 
 - borderFill 정의 시 `borders` 파라미터를 누락하면 테두리가 NONE으로 설정됨
 - `fill_brush`만 있으면 배경색만 적용되고 테두리는 없음
 - 둘 다 필요하면 반드시 두 파라미터 모두 명시할 것
+- **점선 테두리는 `DOT`** (`DOTTED` 아님!)
+- **새 ID 추가 시 기존 최대 ID+1부터 순차적으로 부여** (큰 점프 금지)
 
 ---
 
-## [해결됨] 2025-11-20 – Phase 1.5 표 보더/이중실선 불일치
+## [해결됨] 2025-11-20 → 2025-11-28 – Phase 1.5 표 보더/이중실선 불일치
 
 ### 현상
 
@@ -103,9 +116,11 @@
 
 - `converter/md_to_hwpx.py`에서 double-slim 테두리를 위해 borderFill 12~17을 정의하고, 헤더/중간행/마지막행에서 셀 좌·우 위치에 따라 ID를 매핑하도록 수정함.
 - 표 파서는 `<표 제목 : ...>` 뒤의 빈 줄을 건너뛰도록 보완했으며, 마커(◦/-,\*, bullet 변형)를 관용적으로 인식하도록 확장됨.
-- **2025-11-27 해결됨**: borderFill ID 101~104에 올바른 borders/fillBrush 정의 적용.
+- **2025-11-28 최종 해결**: borderFill ID를 순차적 34-37로 변경, 점선 타입을 `DOT`로 수정.
 
 ### 해결 방법
 
 - `add_border_fill_custom()` 호출 시 `borders` 딕셔너리를 명시적으로 전달
 - 대제목/강조/요약표 각각의 borderFill ID에 스타일북 요구사항 반영
+- **순차적 ID 사용** (34-37): 기존 palette ID 다음 번호부터 연속 부여
+- **점선 타입 수정**: `DOTTED` → `DOT` (HWPX LineType2 스펙 준수)

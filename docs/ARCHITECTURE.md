@@ -186,6 +186,38 @@ def convert_md_to_hwpx(
 - `tests/fixtures/`: 입력 MD, 기대 YAML, 승인된 HWPX 샘플을 한 세트로 유지하여 회귀 테스트 가능
 - 목표: 새로운 양식 추가 시 YAML만 갱신하면 변환기와 검증기가 동시에 기대치를 공유하도록 함
 
+#### Phase 1.5 표 스타일링 구조 (2025-11-28 확정)
+
+**borderFill ID 전략:**
+- 기존 palette ID (1-33) 다음부터 순차적으로 부여: 34, 35, 36, 37...
+- **절대 큰 값으로 점프하지 말 것** (예: 101+) — 일부 환경에서 인식 안 됨
+
+**현재 사용 중인 커스텀 borderFill ID:**
+| ID  | 상수명                        | 용도         | 테두리      | 배경색           |
+| --- | ----------------------------- | ------------ | ----------- | ---------------- |
+| 34  | TITLE_TABLE_SPACER_BORDER_ID  | 대제목 1,3행 | NONE        | #EBDEF1 (연보라) |
+| 35  | TITLE_TABLE_BODY_BORDER_ID    | 대제목 본문  | NONE        | 없음             |
+| 36  | EMPH_TABLE_BORDER_ID          | 강조 표      | SOLID 0.12mm| #CDF2E4 (연두)   |
+| 37  | SUMMARY_TABLE_BORDER_ID       | 요약표       | DOT 0.12mm  | 없음             |
+
+**표 XML 구조:**
+```xml
+<!-- 표 외곽 (container) -->
+<hp:tbl borderFillIDRef="3">  <!-- SOLID 외곽선 -->
+  <hp:tr>
+    <!-- 각 셀 (cell-level 배경/테두리) -->
+    <hp:tc borderFillIDRef="34">  <!-- 연보라 배경 -->
+      ...
+    </hp:tc>
+  </hp:tr>
+</hp:tbl>
+```
+
+**HWPX LineType2 유효 값:**
+- `NONE`, `SOLID`, `DOT`, `DASH`, `DASH_DOT`, `DASH_DOT_DOT`, `LONG_DASH`
+- `CIRCLE`, `DOUBLE_SLIM`, `SLIM_THICK`, `THICK_SLIM`, `SLIM_THICK_SLIM`
+- ⚠️ `DOTTED`는 유효하지 않음! 반드시 `DOT` 사용
+
 ### HWPX 검증 툴
 
 **기능:**

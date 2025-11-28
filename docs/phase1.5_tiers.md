@@ -36,3 +36,32 @@
 - **2025-11-16 실행:** `/bin/python3 converter/md_to_hwpx.py converter/sample_input.md output/test_final.hwpx` → `/bin/python3 validator/cli.py templates/phase1_5_sample.yaml output/test_final.hwpx --format text` (PASS 29/29). 메모: 724×1024 단색 `Preview/PrvImage.png` 플레이스홀더를 새로 포함하고 텍스트 프리뷰와 동시생성하도록 유지. Tier0 기준으로는 Option A 메타데이터 구조 + 프리뷰 자산이 모두 안정 동작 확인.
 - **Option A 메모 (2025-11-16):** Paragraph layout/indent 재작업은 고위험 요소로 분류되어 당분간 보류한다. 관련 변경은 `converter/md_to_hwpx.py`에서 명시적으로 플래그를 켠 뒤 충분한 검증 루프(`converter/sample_input.md` → validator) 하에서만 진행한다.
 - **Preview 자산 계획:** Hangul Tier1 산출물과의 구조적 차이를 줄이기 위해 `Preview/PrvText.txt`와 PNG 썸네일을 다시 생성 대상으로 편입한다. 실제 구현은 메타데이터/namespace 동기화 이후 단계에서 수행하며, 최종 검증 루프에 포함한다.
+
+---
+
+### 2025-11-28 표 색상/테두리 수정 완료
+
+**실행:**
+```bash
+python converter/md_to_hwpx.py "validator/tier_test_input/(2-1)testinput.md" "output/test_exp2_dot.hwpx"
+```
+
+**결과:** 성공 ✅
+
+**수정 내용:**
+1. borderFill ID를 순차적 34-37으로 변경 (기존 101-104에서)
+2. 점선 테두리 타입을 `DOTTED` → `DOT`로 수정 (HWPX LineType2 스펙 준수)
+3. `<hp:tbl borderFillIDRef="3">` (외곽) + `<hp:tc borderFillIDRef="XX">` (셀) 분리 구조 확립
+
+**검증된 borderFill 정의:**
+| ID | 용도 | 테두리 | 배경 |
+|----|------|--------|------|
+| 34 | 대제목 1,3행 spacer | NONE | #EBDEF1 (연보라) |
+| 35 | 대제목 본문 | NONE | 없음 |
+| 36 | 강조 표 | SOLID 0.12mm | #CDF2E4 (연두) |
+| 37 | 요약표 | DOT 0.12mm | 없음 |
+
+**핵심 발견:**
+- HWPX LineType2에서 `DOTTED`는 유효하지 않음, `DOT` 사용 필수
+- borderFill ID는 기존 palette 다음 번호부터 순차 부여 (큰 점프 금지)
+- 표 외곽 borderFill과 셀 borderFill 분리 필요

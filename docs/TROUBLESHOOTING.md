@@ -133,7 +133,7 @@ unzip -p output/test_final.hwpx Contents/section0.xml | sed -n '1,120p'
 
 ## [해결됨] 표 색상/테두리 적용 안 될 때 (Phase 1.5)
 
-> **2025-11-27 해결**: borderFill 정의 시 `borders` 파라미터 누락이 원인
+> **2025-11-28 최종 해결**: borderFill 정의 시 `borders` 파라미터 누락 + 점선 타입 오류 + ID 순차성 문제 해결
 
 ### 증상
 
@@ -142,7 +142,9 @@ unzip -p output/test_final.hwpx Contents/section0.xml | sed -n '1,120p'
 - 요약표 점선 테두리 대신 선 없음
 - 표 테두리가 전혀 표시되지 않음
 
-### 원인
+### 원인 분석
+
+**원인 1: `borders` 파라미터 누락**
 
 `add_border_fill_custom()` 호출 시 `fill_brush`만 전달하고 `borders`를 생략하면:
 
@@ -163,18 +165,62 @@ add_border_fill_custom(
 )
 ```
 
-### 해결된 borderFill 정의
+**원인 2: 점선 타입 열거형 오류**
 
-| ID  | 용도         | 테두리        | 배경색           |
+HWPX LineType2 스펙에서 점선은 `DOTTED`가 아니라 `DOT`:
+
+```python
+# ❌ 잘못된 값 - 렌더링 안 됨
+borders={"left": ("DOTTED", "0.12 mm"), ...}
+
+# ✅ 올바른 값
+borders={"left": ("DOT", "0.12 mm"), ...}
+```
+
+**원인 3: borderFill ID 순차성 문제**
+
+ID를 101+ 등 큰 값으로 점프하면 일부 환경에서 인식이 안 될 수 있음:
+
+```python
+# ❌ 위험 - 기존 ID 1-33 이후 101로 점프
+TITLE_TABLE_SPACER_BORDER_ID = "101"
+
+# ✅ 안전 - 순차적 ID 사용
+TITLE_TABLE_SPACER_BORDER_ID = "34"  # 기존 최대 33 다음
+```
+
+### 해결된 borderFill 정의 (2025-11-28 최종)
+
+| ID  | 용도         | 테두리      | 배경색           |
 | --- | ------------ | ------------- | ---------------- |
-| 101 | 대제목 1,3행 | SOLID 0.12mm  | #EBDEF1 (연보라) |
-| 102 | 대제목 본문  | SOLID 0.12mm  | 없음             |
-| 103 | 강조 표      | SOLID 0.4mm   | #CDF2E4 (연두)   |
-| 104 | 요약표       | DOTTED 0.12mm | 없음             |
+| 34  | 대제목 1,3행 | NONE          | #EBDEF1 (연보라) |
+| 35  | 대제목 본문  | NONE          | 없음             |
+| 36  | 강조 표      | SOLID 0.12mm  | #CDF2E4 (연두)   |
+| 37  | 요약표       | DOT 0.12mm    | 없음             |
 
 ### 관련 파일
 
 - `converter/md_to_hwpx.py`: `build_header_xml()` 내 `add_border_fill_custom()` 호출부
+- borderFill ID 상수: `TITLE_TABLE_SPACER_BORDER_ID`, `TITLE_TABLE_BODY_BORDER_ID`, `EMPH_TABLE_BORDER_ID`, `SUMMARY_TABLE_BORDER_ID`
+
+### HWPX LineType2 유효 값 상세
+
+| 값 | 설명 |
+|------|------|
+| NONE | 선 없음 |
+| SOLID | 실선 |
+| DOT | 점선 (•••) |
+| DASH | 파선 (———) |
+| DASH_DOT | 일점쇄선 (—•—•) |
+| DASH_DOT_DOT | 이점쇄선 (—••—••) |
+| LONG_DASH | 긴 파선 |
+| CIRCLE | 원형 점선 |
+| DOUBLE_SLIM | 이중 가는 실선 |
+| SLIM_THICK | 가늘고 굵은 이중선 |
+| THICK_SLIM | 굵고 가는 이중선 |
+| SLIM_THICK_SLIM | 삼중선 |
+
+> **주의**: `DOTTED`는 유효한 값이 아님! `DOT`을 사용할 것.
 
 ---
 
