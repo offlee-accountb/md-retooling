@@ -492,7 +492,8 @@ document-automation/
 1. **ARCHITECTURE.md** (이 문서) - 시스템 전체 설계
 2. **RECENT_CHANGES.md** - 최근 5-10개 변경사항
 3. **AI_COLLABORATION_GUIDE.md** - 협업 규칙 및 프로토콜
-4. **FULL_CHANGELOG.md** - Phase별 이력 (필요시)
+4. **HWPX_IMPLEMENTATION_NOTES.md** - ⚠️ HWPX 생성 시 필수! (실험 발견 규칙)
+5. **FULL_CHANGELOG.md** - Phase별 이력 (필요시)
 
 ### 변경 이력 관리
 - `docs/RECENT_CHANGES.md` - 최근 5-10개 변경사항 (AI가 매번 참조)

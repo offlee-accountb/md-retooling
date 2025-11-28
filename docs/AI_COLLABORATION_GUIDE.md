@@ -206,7 +206,22 @@ def function_name(arg1: str, arg2: int = 0) -> str:
 
 ---
 
-## 9. 참고
+## 9. HWPX 생성 규칙 (필독!)
+
+> ⚠️ HWPX 파일 생성 시 반드시 확인:
+
+**📄 `docs/HWPX_IMPLEMENTATION_NOTES.md`** - 실험으로 발견된 규칙들
+
+- charPr ID: 0부터 연속 사용 필수
+- charPr 내부 순서: `underline` → `strikeout`
+- `strikeout`은 `shape="NONE"` (type 없음)
+- section0.xml 첫 문단에 완전한 `<hp:secPr>` 필수
+
+**파일이 열리지 않으면** → `HWPX_IMPLEMENTATION_NOTES.md` 디버깅 체크리스트 확인
+
+---
+
+## 10. 참고
 
 ### 내부 문서
 - `ARCHITECTURE.md` - 시스템 설계
