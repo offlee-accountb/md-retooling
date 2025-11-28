@@ -14,17 +14,38 @@ NOTE:
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, TYPE_CHECKING
 import argparse
 import base64
 import getpass
 import re
 import zipfile
 import xml.etree.ElementTree as ET
+
+# Style config loading
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from validator.template_loader import load_style_config, StyleConfig
+
+# ---------------------------------------------------------------------------
+# Load style configuration (YAML-based)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_STYLE_PATH = Path(__file__).parent.parent / "templates" / "core_styles.yaml"
+
+def _load_config() -> StyleConfig:
+    """Load style configuration from YAML."""
+    if _DEFAULT_STYLE_PATH.exists():
+        return load_style_config(_DEFAULT_STYLE_PATH)
+    # Fallback: return empty config (will use hardcoded defaults)
+    from validator.template_loader import StyleConfig
+    return StyleConfig(version="1.0", template_id="fallback", description="Hardcoded fallback")
+
+CONFIG: StyleConfig = _load_config()
 
 # ---------------------------------------------------------------------------
 # Data model for parsed markdown
@@ -82,80 +103,97 @@ class DocumentMetadata:
 
 # ---------------------------------------------------------------------------
 # Style mapping layer (logical BlockType → paraPr/charPr IDs)
+# Dynamically built from CONFIG (core_styles.yaml)
 # ---------------------------------------------------------------------------
 
+def _build_style_maps() -> tuple:
+    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성."""
+    # BlockType 이름 → YAML 키 매핑
+    block_to_yaml = {
+        BlockType.TITLE: "title",
+        BlockType.SUBTITLE: "subtitle",
+        BlockType.BODY: "body",
+        BlockType.DESC2: "desc2",
+        BlockType.DESC3: "desc3",
+        BlockType.EMPHASIS: "emphasis",
+        BlockType.PLAIN: "plain",
+    }
+    
+    para_map = {}
+    char_map = {}
+    style_map = {}
+    
+    for block_type, yaml_key in block_to_yaml.items():
+        style = CONFIG.get_style(yaml_key)
+        if style:
+            para_map[block_type] = str(style.para_pr_id)
+            char_map[block_type] = str(style.char_pr_id)
+            style_map[block_type] = str(style.style_id)
+        else:
+            # Fallback to 0 if not defined
+            para_map[block_type] = "0"
+            char_map[block_type] = "0"
+            style_map[block_type] = "0"
+    
+    return para_map, char_map, style_map
 
-# NOTE:
-# - IDs here MUST correspond to definitions in header.xml.
-# - For now header.xml only defines paraPr id="0" and charPr id="0".
-# - We still keep the mapping table so that later we can extend header.xml
-#   and just update these maps without touching the rest of the code.
-
-PARA_STYLE_MAP = {
-    # NOTE: IDs must match paraPr definitions in header.xml
-    BlockType.TITLE: "1",
-    BlockType.SUBTITLE: "2",
-    BlockType.BODY: "9",
-    BlockType.DESC2: "8",
-    BlockType.DESC3: "10",
-    BlockType.EMPHASIS: "6",
-    BlockType.PLAIN: "0",
-}
-
-# Hangul only honors run-level charPr IDs ≤8 when the paragraph shares the 바탕글
-# paraPr. Keep explicit IDs for each logical block so we never emit 9+; spacer runs
-# still use 1~4 via SPACER_CHAR_MAP.
-RUN_CHAR_OVERRIDE_MAP = {
-    BlockType.TITLE: "5",
-    BlockType.SUBTITLE: "6",
-    BlockType.BODY: "0",
-    BlockType.DESC2: "0",
-    BlockType.DESC3: "7",
-    BlockType.EMPHASIS: "8",
-    BlockType.PLAIN: "0",
-}
+PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
 
 INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
 
-HWPUNITS_PER_MM = 283.464566929
+# ---------------------------------------------------------------------------
+# Config-driven constants (from core_styles.yaml via CONFIG)
+# ---------------------------------------------------------------------------
 
-PAGE_WIDTH_MM = 210.0
-PAGE_HEIGHT_MM = 297.0
-PAGE_WIDTH_HWP = "59528"   # matches test_minimal_manual.hwpx
-PAGE_HEIGHT_HWP = "84186"
-MARGIN_TOP_MM = 15.0
-MARGIN_BOTTOM_MM = 15.0
-MARGIN_LEFT_MM = 20.0
-MARGIN_RIGHT_MM = 20.0
-MARGIN_HEADER_MM = 10.0
-MARGIN_FOOTER_MM = 10.0
-PAGE_BORDER_OFFSET_MM = 5.0
-TABLE_WIDTH_HWP = "48189"
-TITLE_BODY_HEIGHT_HWP = "3174"
+HWPUNITS_PER_MM = CONFIG.hwp_per_mm
+
+# Page dimensions
+PAGE_WIDTH_MM = CONFIG.page.width_mm
+PAGE_HEIGHT_MM = CONFIG.page.height_mm
+PAGE_WIDTH_HWP = str(CONFIG.page.width_hwp)
+PAGE_HEIGHT_HWP = str(CONFIG.page.height_hwp)
+
+# Page margins
+MARGIN_TOP_MM = CONFIG.page.margins_mm.get("top", 15.0)
+MARGIN_BOTTOM_MM = CONFIG.page.margins_mm.get("bottom", 15.0)
+MARGIN_LEFT_MM = CONFIG.page.margins_mm.get("left", 20.0)
+MARGIN_RIGHT_MM = CONFIG.page.margins_mm.get("right", 20.0)
+MARGIN_HEADER_MM = CONFIG.page.margins_mm.get("header", 10.0)
+MARGIN_FOOTER_MM = CONFIG.page.margins_mm.get("footer", 10.0)
+PAGE_BORDER_OFFSET_MM = CONFIG.page.border_offset_mm
+
+# Table dimensions (from CONFIG.tables)
+TABLE_WIDTH_HWP = str(CONFIG.tables.width_hwp) if CONFIG.tables else "48189"
+TITLE_BODY_HEIGHT_HWP = "3174"  # TODO: move to config
 ONE_PT_HWP = str(int(round((25.4 / 72) * HWPUNITS_PER_MM)))
 TITLE_TABLE_ROW_HEIGHTS = (ONE_PT_HWP, TITLE_BODY_HEIGHT_HWP, ONE_PT_HWP)
 EMPH_TABLE_HEIGHT_HWP = "2632"
 EMPH_TABLE_ROW_HEIGHT = "521"
 TITLE_TABLE_SPACER_CHAR_ID = "9"  # 1pt filler
 
-# StyleID mapping (p@styleIDRef → hh:style@id in header.xml)
-STYLE_ID_MAP = {
-    BlockType.TITLE: "1",
-    BlockType.SUBTITLE: "2",
-    BlockType.BODY: "3",
-    BlockType.DESC2: "4",
-    BlockType.DESC3: "5",
-    BlockType.EMPHASIS: "6",
-    BlockType.PLAIN: "0",
-}
+# Header/Footer 전용 스타일 ID (CONFIG.styles에서 동적 조회)
+def _get_header_footer_ids():
+    """머리말/꼬리말 스타일 ID를 CONFIG에서 가져온다."""
+    hdr = CONFIG.get_style("header")
+    ftr = CONFIG.get_style("footer")
+    return {
+        "header_para": str(hdr.para_pr_id) if hdr else "12",
+        "header_char": str(hdr.char_pr_id) if hdr else "10",
+        "header_style": str(hdr.style_id) if hdr else "12",
+        "footer_para": str(ftr.para_pr_id) if ftr else "13",
+        "footer_char": str(ftr.char_pr_id) if ftr else "10",
+        "footer_style": str(ftr.style_id) if ftr else "13",
+    }
 
-# Header/Footer 전용 스타일 ID (header.xml 정의와 일치해야 함)
-HEADER_PARA_ID = "12"
-FOOTER_PARA_ID = "13"
-HEADER_CHAR_ID = "10"
-FOOTER_CHAR_ID = "10"
-HEADER_STYLE_ID = "12"
-FOOTER_STYLE_ID = "13"
+_HF_IDS = _get_header_footer_ids()
+HEADER_PARA_ID = _HF_IDS["header_para"]
+FOOTER_PARA_ID = _HF_IDS["footer_para"]
+HEADER_CHAR_ID = _HF_IDS["header_char"]
+FOOTER_CHAR_ID = _HF_IDS["footer_char"]
+HEADER_STYLE_ID = _HF_IDS["header_style"]
+FOOTER_STYLE_ID = _HF_IDS["footer_style"]
+
+# Table-specific style IDs (TODO: migrate to CONFIG.tables.styles)
 TABLE_TITLE_PARA_ID = "14"
 TABLE_HEADER_PARA_ID = "15"
 TABLE_BODY_PARA_ID = "16"
@@ -171,20 +209,29 @@ TABLE_BODY_CHAR_ID = "11"
 TABLE_HEADER_CHAR_ID = "12"
 
 # Dedicated borderFill IDs for non-standard tables
-TITLE_TABLE_SPACER_BORDER_ID = "101"
-TITLE_TABLE_BODY_BORDER_ID = "102"
-EMPH_TABLE_BORDER_ID = "103"
-SUMMARY_TABLE_BORDER_ID = "104"
+# 실험 2: 순차적 ID 사용 (ID 개수 제한 가설 검증)
+TITLE_TABLE_SPACER_BORDER_ID = "34"   # 연보라 배경 + 테두리 NONE
+TITLE_TABLE_BODY_BORDER_ID = "35"     # 테두리 NONE, 배경 없음
+EMPH_TABLE_BORDER_ID = "36"           # 연두 배경 + SOLID 테두리
+SUMMARY_TABLE_BORDER_ID = "37"        # 점선 테두리
 
-# Spacer paragraph mapping: certain BlockType 앞에 여백용 문단 삽입
-SPACER_CHAR_MAP = {
-    # 휴먼명조 계열 spacer (test_inputmodel 기반)
-    # NOTE: spacer charPr IDs intentionally kept in 1~4 so Hangul honors their heights
-    BlockType.SUBTITLE: "1",   # 10pt
-    BlockType.BODY: "2",      # 8pt
-    BlockType.DESC2: "3",     # 6pt
-    BlockType.DESC3: "4",     # 4pt
-}
+# Spacer paragraph mapping: CONFIG.spacers에서 동적 생성
+def _build_spacer_char_map():
+    """CONFIG.spacers에서 SPACER_CHAR_MAP 생성."""
+    block_to_yaml = {
+        BlockType.SUBTITLE: "subtitle",
+        BlockType.BODY: "body",
+        BlockType.DESC2: "desc2",
+        BlockType.DESC3: "desc3",
+    }
+    result = {}
+    for block_type, yaml_key in block_to_yaml.items():
+        spacer = CONFIG.spacers.get(yaml_key)
+        if spacer:
+            result[block_type] = str(spacer.char_pr_id)
+    return result
+
+SPACER_CHAR_MAP = _build_spacer_char_map()
 
 # Spacer marker text: ↕(size)↕ so later manual/auto replace is easy
 SPACER_MARKER_MAP = {
@@ -837,12 +884,13 @@ def _build_header_footer_text(meta: DocumentMetadata) -> tuple[str, str]:
     """머리말/꼬리말에 넣을 기본 문자열을 구성한다.
 
     - 머리말: 스타일북의 예시 문구를 그대로 사용하되, 제목 자리에 실제 문서 제목 삽입.
-    - 꼬리말: 현재 단계에서는 고정 테스트 문자열만 사용.
+    - 꼬리말: MD에 정의가 없으면 빈 문자열 (현재는 MD 파싱에서 가져오지 않음)
     """
 
     title = meta.title.strip() or "Untitled"
     header_text = f"추진단 자료 스타일 보고서 - {title}"
-    footer_text = "꼬리말 테스트"
+    # 꼬리말: MD에 없으므로 빈 문자열
+    footer_text = ""
     return header_text, footer_text
 
 
@@ -1261,7 +1309,7 @@ def _append_title_table(
             "rowCnt": "3",
             "colCnt": "1",
             "cellSpacing": "0",
-            "borderFillIDRef": "3",
+            "borderFillIDRef": "3",  # 표 외곽 테두리 (SOLID)
             "noAdjust": "0",
         },
     )
@@ -1377,7 +1425,7 @@ def _append_emphasis_table(
             "rowCnt": "1",
             "colCnt": "1",
             "cellSpacing": "0",
-            "borderFillIDRef": "3",
+            "borderFillIDRef": "3",  # 표 외곽 테두리 (SOLID)
             "noAdjust": "0",
         },
     )
@@ -1542,10 +1590,18 @@ def _append_markdown_table(
     if remainder > 0:
         col_widths[-1] += remainder
 
-    TABLE_HEADER_BORDERS = ("12", "13", "14")
-    TABLE_BODY_TOP_BORDERS = ("9", "10", "11")
-    TABLE_BODY_MIDDLE_BORDERS = ("4", "3", "5")
-    TABLE_BODY_BOTTOM_BORDERS = ("6", "7", "8")
+    # 테이블 테두리 ID (CONFIG에서 가져오기, 없으면 기본값)
+    if CONFIG.tables and CONFIG.tables.borders:
+        _tb = CONFIG.tables.borders
+        TABLE_HEADER_BORDERS = tuple(str(x) for x in _tb.header)
+        TABLE_BODY_TOP_BORDERS = tuple(str(x) for x in _tb.body_top)
+        TABLE_BODY_MIDDLE_BORDERS = tuple(str(x) for x in _tb.body_middle)
+        TABLE_BODY_BOTTOM_BORDERS = tuple(str(x) for x in _tb.body_bottom)
+    else:
+        TABLE_HEADER_BORDERS = ("12", "13", "14")
+        TABLE_BODY_TOP_BORDERS = ("9", "10", "11")
+        TABLE_BODY_MIDDLE_BORDERS = ("4", "3", "5")
+        TABLE_BODY_BOTTOM_BORDERS = ("6", "7", "8")
 
     def _pick_border_id(border_ids: tuple[str, str, str], col_idx: int) -> str:
         left_id, mid_id, right_id = border_ids
@@ -2215,16 +2271,46 @@ def build_header_xml() -> bytes:
     )
 
     # Dedicated fills for converter-specific tables
-    add_border_fill_custom(101, fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"})
-    add_border_fill_custom(102)
-    add_border_fill_custom(103, fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"})
+    # ID 34: 대제목 1,3행 spacer - 연보라 배경 + 테두리 NONE
     add_border_fill_custom(
-        104,
+        34,
         borders={
-            "left": ("DOTTED", "0.5 mm"),
-            "right": ("DOTTED", "0.5 mm"),
-            "top": ("DOTTED", "0.5 mm"),
-            "bottom": ("DOTTED", "0.5 mm"),
+            "left": ("NONE", "0.12 mm"),
+            "right": ("NONE", "0.12 mm"),
+            "top": ("NONE", "0.12 mm"),
+            "bottom": ("NONE", "0.12 mm"),
+        },
+        fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+    )
+    # ID 35: 대제목 본문 (2행) - 테두리 NONE, 배경 없음
+    add_border_fill_custom(
+        35,
+        borders={
+            "left": ("NONE", "0.12 mm"),
+            "right": ("NONE", "0.12 mm"),
+            "top": ("NONE", "0.12 mm"),
+            "bottom": ("NONE", "0.12 mm"),
+        },
+    )
+    # ID 36: 강조 표 - 연두 배경 + 0.12mm 실선 테두리
+    add_border_fill_custom(
+        36,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+        fill_brush={"faceColor": "#CDF2E4", "hatchColor": "#999999", "alpha": "0"},
+    )
+    # ID 37: 요약표 - 점선 0.12mm 테두리
+    add_border_fill_custom(
+        37,
+        borders={
+            "left": ("DOT", "0.12 mm"),
+            "right": ("DOT", "0.12 mm"),
+            "top": ("DOT", "0.12 mm"),
+            "bottom": ("DOT", "0.12 mm"),
         },
     )
 
