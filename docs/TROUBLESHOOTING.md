@@ -1,256 +1,201 @@
-# TROUBLESHOOTING
+# Troubleshooting - 해결된 문제 기록
 
-> 변환기/검증기 사용 중 자주 발생하는 문제와 우회 방법을 정리합니다.
-
----
-
-## 머리말/꼬리말이 보이지 않거나 정렬이 이상할 때 (Phase 1.5)
-
-### 증상
-
-- 입력: `converter/sample_input.md` → 출력: `output/test_final.hwpx`.
-- 한글에서 열었을 때:
-  - 머리말: 문서 상단에 아무 것도 보이지 않음.
-  - 꼬리말: 텍스트(`"꼬리말 테스트"`)는 보이지만, 정렬이 "없음"으로 잡혀 있고, 폰트가 휴먼명조 15pt 근처로 표시됨.
-
-### 내부 구조 확인 결과
-
-- `unzip -p output/test_final.hwpx Contents/section0.xml`로 확인 시:
-  - 머리말:
-    - `hp:p id="0"` (제목 테이블이 있는 문단)의 `hp:run` 안에 `hp:tbl` 뒤에 다음과 같은 ctrl이 존재:
-      ```xml
-      <hp:ctrl>
-        <hp:header id="1" applyPageType="BOTH">
-          <hp:subList ... textWidth="48189" textHeight="2834">
-            <hp:p id="0" paraPrIDRef="8" styleIDRef="0" ...>
-              <hp:run charPrIDRef="0">
-                <hp:t>
-                  <hp:tab width="39188" leader="0" type="2" />
-                </hp:t>
-                추진단 자료 스타일 보고서 - ...
-              </hp:run>
-            </hp:p>
-          </hp:subList>
-        </hp:header>
-      </hp:ctrl>
-      ```
-    - 즉, XML 상으로는 머리말 구조가 존재하며, 탭 + 텍스트 패턴도 들어가 있음.
-  - 꼬리말:
-    - 첫 SUBTITLE 문단(`paraPrIDRef="2"`) 안에 다음과 같은 ctrl이 존재:
-      ```xml
-      <hp:run ...>
-        <hp:ctrl>
-          <hp:footer id="3" applyPageType="BOTH">
-            <hp:subList ... textWidth="48189" textHeight="2834">
-              <hp:p id="0" paraPrIDRef="9" styleIDRef="0" ...>
-                <hp:run charPrIDRef="0">
-                  <hp:t>꼬리말 테스트</hp:t>
-                </hp:run>
-              </hp:p>
-            </hp:subList>
-          </hp:footer>
-        </hp:ctrl>
-      </hp:run>
-      ```
-    - 구조적으로는 Tier1 with_header 샘플과 동일한 위치/패턴을 따르고 있음.
-
-### 가능한 원인
-
-1. **`header.xml` 스타일 정의 불일치**
-
-   - 변환기가 사용하는 `header.xml`에서:
-     - `paraPr id="8"`, `id="9"`가 실제로 오른쪽 정렬 + 기관 요구 폰트(예: 바탕글 11pt)가 아닌, 기본/실험용 스타일로 정의되어 있을 수 있음.
-   - Tier1 with_header 샘플의 `header.xml`과 비교했을 때:
-     - 머리말/꼬리말용 paraPr/charPr의 정렬, 폰트, 크기 설정이 다를 가능성이 큼.
-
-2. **한글 UI의 머리말/꼬리말 보기 옵션**
-
-   - 한글 상단/하단에 머리말/꼬리말이 표시되지 않는 경우:
-     - "보기" 탭 또는 페이지 레이아웃에서 머리말/꼬리말 표시 옵션이 꺼져 있을 수 있음.
-   - 다만, 이 경우에도 꼬리말 텍스트는 보인다는 점에서, 스타일 정의 문제와 복합적으로 얽혀 있을 수 있음.
-
-3. **오른쪽 정렬 구현 방식 차이**
-   - 현재 구현은 "오른쪽 정렬 스타일 + 탭" 패턴을 Tier1 XML에서 그대로 모사했지만,
-   - 실제 기관 문서에서는 paraPr/charPr, 탭 스톱, 마진 조합이 다르게 구성되어 있을 수 있음.
-
-### 디버깅/우회 절차
-
-#### 1단계: XML 구조 확인 (이미 완료된 절차)
-
-```bash
-cd /home/<user>/madenew1
-unzip -p output/test_final.hwpx Contents/section0.xml | sed -n '1,120p'
-```
-
-- 머리말/꼬리말 `hp:header`/`hp:footer` 존재 여부와 `paraPrIDRef`/`charPrIDRef` 값을 확인.
-
-#### 2단계: 스타일 정의 비교
-
-1. Tier1 with_header 샘플에서 `header.xml` 추출:
-   ```bash
-   unzip -p validator/tier_test/tier1/with_header.hwpx Contents/header.xml > /tmp/header_with.xml
-   ```
-2. 현재 변환기가 사용하는 `header.xml` 추출:
-   ```bash
-   unzip -p output/test_final.hwpx Contents/header.xml > /tmp/header_current.xml
-   ```
-3. diff 비교:
-   ```bash
-   diff -u /tmp/header_with.xml /tmp/header_current.xml | less
-   ```
-4. 특히 다음 항목을 집중 확인:
-   - `paraPr id="8"`, `paraPr id="9"`의 `align`, `lineSpacing`, `fontRef` 설정.
-   - 머리말/꼬리말 전용 style(`hh:style`)이 있는지 여부.
-
-#### 3단계: 임시 우회 (수동 편집)
-
-- 문제를 재현/확인하기 위해, 한글에서 직접 스타일을 수정:
-  1. `output/test_final.hwpx`를 한글에서 열기.
-  2. 머리말/꼬리말 편집 모드로 들어가, 해당 문단을 선택 후 원하는 정렬/폰트로 변경.
-  3. 저장 후 다시 `header.xml`을 추출하여, 한글이 실제로 어떤 paraPr/charPr를 사용하는지 확인.
-- 이 정보를 바탕으로 변환기 쪽 `header.xml`에 동일한 paraPr/charPr 정의를 추가하고, `paraPrIDRef`/`charPrIDRef`를 그 ID로 맞추면 된다.
-
-#### 4단계: 변환기 수정 방향 (가이드)
-
-- 변환기 코드(`converter/md_to_hwpx.py`):
-  - `_append_header_footer_ctrl`에서 현재는 상수 `"8"`, `"9"`를 paraPrIDRef로 사용 중.
-  - 추후에는:
-    - `HEADER_PARA_ID`, `FOOTER_PARA_ID` 상수를 별도 정의.
-    - 이 값이 실제 `header.xml`에 존재하는지 검증하거나,
-    - 존재하지 않을 경우 graceful fallback (예: PLAIN 스타일로 생성 + 로그 경고) 도입.
-- 스타일 파일(`header.xml`):
-  - Tier1 with_header 샘플의 머리말/꼬리말 paraPr/charPr 블록을 그대로 가져와 현재 변환기용 `header.xml`에 병합.
-
-### 요약
-
-- **문제 본질:** 머리말/꼬리말 XML 구조는 이미 Tier1 샘플과 거의 동일하게 생성되고 있지만, 한글에서 보이는 정렬/폰트는 `header.xml`의 스타일 정의 차이 때문에 기관 요구와 다름.
-- **현재 상태:** 구조는 안정, 스타일 튜닝(paraPr/charPr 정의 동기화)이 남아 있는 상태.
-- **권장 조치:** Tier1 샘플의 머리말/꼬리말 스타일 정의를 현재 변환기 `header.xml`에 반영하고, 관련 ID를 상수로 관리하여 추후 양식 추가 시 재사용 가능하게 설계.
+> Phase 1 개발 중 발생한 문제와 해결 방법 아카이브
+> 
+> **목적:** 유사 문제 재발 시 빠른 해결, 다음 양식 개발 시 참고
 
 ---
 
-(이 섹션은 GitHub Copilot가 2025-11-18 기준 머리말/꼬리말 관련 트러블슈팅 상황을 정리한 것입니다.)
+## 작성 규칙
 
-## [해결됨] 표 색상/테두리 적용 안 될 때 (Phase 1.5)
-
-> **2025-11-28 최종 해결**: borderFill 정의 시 `borders` 파라미터 누락 + 점선 타입 오류 + ID 순차성 문제 해결
-
-### 증상
-
-- 대제목 표 1,3행 연보라 배경 없음
-- 강조 표 연두 배경 없음
-- 요약표 점선 테두리 대신 선 없음
-- 표 테두리가 전혀 표시되지 않음
-
-### 원인 분석
-
-**원인 1: `borders` 파라미터 누락**
-
-`add_border_fill_custom()` 호출 시 `fill_brush`만 전달하고 `borders`를 생략하면:
-
-```python
-# ❌ 잘못된 예 - 테두리 없이 배경만 적용됨
-add_border_fill_custom(101, fill_brush={"faceColor": "#EBDEF1", ...})
-
-# ✅ 올바른 예 - 테두리 + 배경 모두 적용
-add_border_fill_custom(
-    101,
-    borders={
-        "left": ("SOLID", "0.12 mm"),
-        "right": ("SOLID", "0.12 mm"),
-        "top": ("SOLID", "0.12 mm"),
-        "bottom": ("SOLID", "0.12 mm"),
-    },
-    fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
-)
-```
-
-**원인 2: 점선 타입 열거형 오류**
-
-HWPX LineType2 스펙에서 점선은 `DOTTED`가 아니라 `DOT`:
-
-```python
-# ❌ 잘못된 값 - 렌더링 안 됨
-borders={"left": ("DOTTED", "0.12 mm"), ...}
-
-# ✅ 올바른 값
-borders={"left": ("DOT", "0.12 mm"), ...}
-```
-
-**원인 3: borderFill ID 순차성 문제**
-
-ID를 101+ 등 큰 값으로 점프하면 일부 환경에서 인식이 안 될 수 있음:
-
-```python
-# ❌ 위험 - 기존 ID 1-33 이후 101로 점프
-TITLE_TABLE_SPACER_BORDER_ID = "101"
-
-# ✅ 안전 - 순차적 ID 사용
-TITLE_TABLE_SPACER_BORDER_ID = "34"  # 기존 최대 33 다음
-```
-
-### 해결된 borderFill 정의 (2025-11-28 최종)
-
-| ID  | 용도         | 테두리      | 배경색           |
-| --- | ------------ | ------------- | ---------------- |
-| 34  | 대제목 1,3행 | NONE          | #EBDEF1 (연보라) |
-| 35  | 대제목 본문  | NONE          | 없음             |
-| 36  | 강조 표      | SOLID 0.12mm  | #CDF2E4 (연두)   |
-| 37  | 요약표       | DOT 0.12mm    | 없음             |
-
-### 관련 파일
-
-- `converter/md_to_hwpx.py`: `build_header_xml()` 내 `add_border_fill_custom()` 호출부
-- borderFill ID 상수: `TITLE_TABLE_SPACER_BORDER_ID`, `TITLE_TABLE_BODY_BORDER_ID`, `EMPH_TABLE_BORDER_ID`, `SUMMARY_TABLE_BORDER_ID`
-
-### HWPX LineType2 유효 값 상세
-
-| 값 | 설명 |
-|------|------|
-| NONE | 선 없음 |
-| SOLID | 실선 |
-| DOT | 점선 (•••) |
-| DASH | 파선 (———) |
-| DASH_DOT | 일점쇄선 (—•—•) |
-| DASH_DOT_DOT | 이점쇄선 (—••—••) |
-| LONG_DASH | 긴 파선 |
-| CIRCLE | 원형 점선 |
-| DOUBLE_SLIM | 이중 가는 실선 |
-| SLIM_THICK | 가늘고 굵은 이중선 |
-| THICK_SLIM | 굵고 가는 이중선 |
-| SLIM_THICK_SLIM | 삼중선 |
-
-> **주의**: `DOTTED`는 유효한 값이 아님! `DOT`을 사용할 것.
-
----
-
-## 표 헤더/본문 보더·색상 어긋날 때 (Phase 1.5) - 과거 이슈
+### 형식
+```markdown
+## [YYYY-MM-DD] 문제: 간단한 제목
 
 ### 증상
+- 어떤 문제가 발생했는가
+- 에러 메시지, 현상
 
-- 헤더 행 배경(연보라) 누락, 이중실선이 일부 셀에만 적용.
-- 오른쪽 열 상/하 보더가 다른 열과 다르게 얇은 실선 혹은 없음으로 표시.
-- 중간 행 하단이 모두 굵은 실선으로 깔리거나 마지막 행만 얇은 실선으로 남는 등 행·열별 보더 불일치.
+### 원인
+- 왜 발생했는가
 
-### 확인 포인트
-
-1. `Contents/header.xml`의 borderFill 정의:
-   - Tier1 샘플 기준 double-slim 세트: id 12~17 (위 DOUBLE_SLIM 0.5mm, 좌·우 0.12mm 조합).
-   - 헤더 배경용 id 7(연보라 + top SOLID 0.12 / bottom DOUBLE 0.5 / 좌·우 없음).
-2. `Contents/section0.xml`에서 테이블 셀별 borderFillIDRef:
-   - 헤더: 좌/중/우 = 12/13/14, 본문 중간행: 15/16/17, 마지막행: 8(얇은 실선).
-3. 마크다운 표 제목 뒤에 빈 줄이 있는지 여부 (빈 줄이 있으면 과거 버전에서 표 감지 실패 가능).
-
-### 수정/우회 절차
-
-1. Tier1 샘플(`validator/tier_test_inputmodel/(2-1)test_inputmodel.hwpx`)과 현재 산출물의 `header.xml`을 diff해 12~17 정의가 동일한지 확인.
-2. `section0.xml`에서 표 헤더/본문 각 셀의 `borderFillIDRef`를 행·열별로 점검:
-   - 헤더 행: 좌 12, 중 13, 우 14
-   - 본문 중간행: 좌 15, 중 16, 우 17
-   - 마지막 행: 8
-3. 필요 시 새로운 borderFill ID(19+)를 추가해 오른쪽 열 전용/마지막 행 전용 테두리를 분리하고, `_append_markdown_table`의 매핑을 조정.
-4. 헤더 배경이 사라지면 id 7을 헤더 행에 강제 적용하거나, 테이블 전체 borderFill이 덮어쓰지 않는지 확인.
+### 해결 방법
+- 어떻게 해결했는가
+- 코드/설정
 
 ### 참고
+- 표준 스펙 위치
+- 관련 이슈
+```
 
-- 최신 파서는 `<표 제목 : ...>` 뒤의 빈 줄을 건너뛰고 파이프로 시작하는 줄을 표로 인식함. 탭은 스페이스로 자동 치환됨.
+### 작성 시점
+- ✅ 문제 **해결 완료** 후
+- ❌ 해결 중에는 `CURRENT_ISSUES.md` 사용
+
+---
+
+## 해결된 문제들
+
+<!-- 
+아래부터 해결된 문제 기록
+최신이 위로
+-->
+
+## [2025-11-15] 문제: 본문/설명 문단이 지나치게 오른쪽으로 밀림
+
+### 증상
+- `output/test_shift*.hwpx`에서 ◦, -, * 문단이 모두 동일한 지점에서 시작하지 않고, 수동 Shift+Tab보다 훨씬 오른쪽으로 이동함.
+- DESC3 설명줄은 좌측 정렬이어야 하는데 가운데 정렬처럼 보이며, 줄 간격도 들쭉날쭉해짐.
+- 한글에서 다시 Shift+Tab을 적용하면 정상 위치로 돌아오지만, 편집 기록이 지저분해지고 재변환 시 다시 깨짐.
+
+### 원인
+- paraPr 8/9/10에 행걸이(`intent`)와 좌측 여백(`left`)을 동시에 써서 “첫 줄만 왼쪽으로 빠져나오는” 대신 전체 문단이 `left` 값만큼 오른쪽으로 이동함.
+- Shift+Tab 기준 들여쓰기는 pt 단위(30, 37.5, 35pt)인데, 이전 코드는 mm로 환산된 큰 수(약 85/106/99pt 상당)를 사용하여 추가로 밀려남.
+
+### 해결 방법
+1. `converter/md_to_hwpx.py`의 paraPr 정의에서 `margin.left/right`를 제거하고 `intent`만 음수로 남겨 행걸이만 적용되도록 수정.
+2. 사용자 정의 기준(내용=30pt, 설명2=37.5pt, 설명3=35pt)에 맞춰 intent 값을 `-3000 / -3750 / -3500`으로 조정하였다. (HWPUNIT=pt×100)
+3. paraPr 8/9/10의 `lineSpacing`을 160%, DESC3 정렬을 LEFT로 유지해 Hangul이 추가로 가운데 정렬을 삽입하지 않도록 맞춤.
+4. 수정 후 `output/test_shift.hwpx`, `output/test_shift_sample.hwpx`를 재생성하고 `Contents/header.xml`에서 intent 값과 좌측 여백이 0인지 확인했다.
+
+### 참고
+- 관련 파일: `converter/md_to_hwpx.py` (`para_defs` 내 id 8/9/10)
+- 비교 자료: `converter/test_minimal_manual.hwpx`, `output/test_shift_sample.hwpx`
+- 향후 과제: `section0.xml`의 `hp:linesegarray`에 `flags=1441792`를 직접 넣어 Hangul이 라인분할을 재작성하지 않도록 하는 개선 예정
+
+## [2025-11-17] 문제: 주제목/강조 표 규격이 스타일 문서와 다름
+
+### 증상
+- 주제목 표의 1/3행이 10pt 높이로 표시되어 상단·하단 여백이 두꺼워짐.
+- 강조 박스 배경색이 스타일 문서의 #CDF2E4 대신 연노랑(#FFF7CC)으로 출력됨.
+- 전체적으로 폰트 매핑이 흔들리면서 다른 영역에서 의도치 않은 글꼴 크기가 나타남.
+
+### 원인
+- 표의 1·3행을 비워두면 Hangul이 해당 셀의 run을 자동 삽입하면서 charPr ID 0(본문 15pt)을 재사용해 높이가 늘어남.
+- `borderFill` ID 6이 연노랑으로 정의되어 있어 강조 표가 항상 #FFF7CC로 채워짐.
+- charPr 슬롯을 임시로 재배치하면서 주제목/강조와 spacer가 ID를 공유해 버렸고, Hangul의 “charPr ID ≤8” 제약 때문에 폰트가 뒤섞임.
+
+### 해결 방법
+1. `char_defs`에 1pt 전용 charPr(ID 9) 추가 후 주제목 표 1/3행에서 해당 ID와 공백 한 글자를 강제로 넣어 셀 높이를 1pt로 고정.
+2. 주제목 표 셀 마진을 0으로 맞춰 배경 블록만 남도록 조정하고, 가운데 행은 기존 HY 15pt ID로 유지.
+3. `borderFill` ID 6을 #CDF2E4 로 수정해 강조 표가 스타일 문서와 동일한 색상을 사용하도록 변경.
+4. 표 주변 spacer는 기존 4pt ID를 계속 쓰고, 일반 문단에 쓰이는 charPr ID 5–8은 원래 매핑(주제목, 소제목, 설명3, 강조)으로 되돌려 전체 폰트가 안정적으로 적용되도록 함.
+5. 수정 후 `output/test_run.hwpx`를 한글에서 열어 표 규격과 배경색이 정확하게 나오는지 확인.
+
+### 참고
+- 관련 코드: `converter/md_to_hwpx.py` (char_defs, TITLE_TABLE_ROW_HEIGHTS, `_append_title_table`, borderFills)
+- 테스트 파일: `output/test_run.hwpx`
+
+## [2025-11-17] 문제: 한글에서 용지가 “사용자 정의/가로”로 표시됨
+
+### 증상
+- `style_textbook` 대로 A4 세로 문서를 만들었는데, 한글 UI에서는 “용지 종류: 사용자 정의”, “용지 방향: 가로”로 표기됨.
+- 줄 여백은 정상 적용되었으나, 페이지 설정이 뒤틀려 추가 편집 시 예상치 못한 레이아웃이 나옴.
+
+### 원인
+- `section0.xml`의 `<hp:pagePr>` 너비/높이를 mm→HWPUNIT으로 변환하면서 반올림(283.46…)을 사용해 Hangul이 내부 템플릿과 다른 값을 기록함. 이때 문서를 “사용자 정의”로 분류.
+- `landscape` 속성을 NARROWLY로 두면 Hangul이 자체적으로 회전을 시도하면서 뷰어에서 가로처럼 보이는 버그가 재현됨.
+
+### 해결 방법
+1. Hangul이 사용하는 정확한 HWPUNIT 값을 `test_minimal_manual.hwpx`에서 추출해 상수(`59528×84186`)로 정의하고, mm 변환 함수는 내림(`int(mm * 283.464566929)`)으로 맞춤.
+2. `hp:pagePr`에 `landscape="WIDELY"`를 지정해 세로 레이아웃을 확정하고, 여백/머리말/꼬리말도 동일한 단위로 기록.
+3. footnote/endnote/pageBorderFill/colPr 등 템플릿과 동일한 섹션 메타데이터를 추가하여 Hangul이 문서를 표준 A4로 인식하도록 맞춤.
+4. 수정 후 `output/test_run.hwpx`를 한글에서 열어 “용지: A4, 방향: 세로, 여백: 20/20/15/15 + 10mm”로 표시되는지 확인.
+
+### 참고
+- 관련 파일: `converter/md_to_hwpx.py` (`mm_to_hwp`, `PAGE_*` 상수, `build_section0_xml` 내 `hp:pagePr`/footnote/colPr 추가)
+- 비교 기준: `converter/test_minimal_manual.hwpx` 의 `Contents/section0.xml`
+
+## [2025-11-17] 문제: 스타일 텍스트가 기본 바탕글 폰트로 돌아감
+
+### 증상
+- spacer 줄은 정상 높이를 유지하지만 주제목/소제목/본문/설명 계열 텍스트가 모두 기본 바탕글 폰트(맑은 고딕 10pt)로 표시됨.
+- charPr ID 5~11에 매핑된 스타일이 존재함에도 한글에서 열면 폰트/크기 차이가 사라지고 기본 서식으로 fallback.
+
+### 원인
+- Hangul은 **동일한 paraPr(바탕글)**를 공유하는 문단에서 run-level charPr ID가 8을 초과하면 height/폰트를 무시하고 기본값으로 되돌리는 제약이 있음.
+- RUN_CHAR_OVERRIDE_MAP을 제거하고 styleIDRef만으로 charPr을 참조했을 때, 한글이 해당 스타일의 charPr ID(9+)를 동일한 제약으로 취급하며 무시.
+- header.xml의 charPr 정의도 0/1/2 외 ID에 대해 Hangul이 fallback 하면서 stile_textbook 요구사항이 깨짐.
+
+### 해결 방법
+1. `converter/md_to_hwpx.py`에서 RUN_CHAR_OVERRIDE_MAP을 재도입하여 각 BlockType이 **ID 0~8 범위**만 사용하도록 지정 (본문/설명2=0, 주제목=5, 소제목=6, 설명3=7, 강조=8 등).
+2. `build_header_xml()`의 char_defs 테이블을 ID 0~8까지만 남기고 각 스타일의 폰트/크기를 해당 ID에 재배치. Spacer용 1~4는 유지, 텍스트 스타일은 5~8에 할당.
+3. style_defs 및 STYLE_ID_MAP, RUN_CHAR_OVERRIDE_MAP이 동일한 charPr ID를 가리키도록 업데이트.
+4. 한글에서 `output/test_run.hwpx` 확인 시 모든 스타일이 명세대로 출력되는지 검증.
+
+### 참고
+- 관련 이슈: `converter/CURRENT_ISSUES.md` – “Spacer 줄(라인스페이서) 폰트/크기 미스매치”
+- 수정 라인: `converter/md_to_hwpx.py` (RUN_CHAR_OVERRIDE_MAP, char_defs, style_defs, section0 run 생성부)
+
+## [2025-11-15] 문제: charPr ID 9 이상이 무시되어 줄 높이가 틀어짐
+
+### 증상
+- spacer 줄을 10/8/6/4pt로 세팅했음에도 한글에서 4/15/10/10pt처럼 기본 바탕글 값으로 표시됨.
+- charPr ID를 9, 10, 11 등으로 부여한 일반 본문 스타일도 동일하게 폰트 크기와 줄 높이가 무시됨.
+
+### 원인
+- 한글이 **바탕글 paraPr(paraPrIDRef=0)**에서 run-level charPr를 해석할 때 ID 0~8 범위까지만 라인 높이에 반영하고, 그 이상 ID는 기본값으로 되돌리는 제약이 존재.
+- spacer/본문 모두 paraPr 0을 공유하고 있었기 때문에, ID 9 이상을 사용하면 항상 fallback이 발생함.
+
+### 해결 방법
+1. spacer 전용 charPr를 1~4 범위로 재배치하여 10/8/6/4pt가 정확히 나오도록 수정.
+2. 본문/설명/강조용 charPr도 6~8 범위 안에 최대한 배치하고, 추가 스타일이 필요하면 **새 paraPr/style을 만들어 그 문단에서만 높은 ID를 쓰도록** 설계해야 함.
+3. `converter/md_to_hwpx.py`에서 charPr ID를 정의할 때 “바탕글 공유 영역(0~8)”과 “개별 스타일 영역(9+)”을 명시적으로 구분하도록 주석을 추가.
+4. [2025-11-15 추가] `output/test_styled8.hwpx` 점검 결과, 스타일 ID 1~6(본문 charPr 8)은 요구사항과 일치하지만 예비 스타일 7/9/10/11은 다른 paraPr/charPr 세팅으로 인해 명령과 다른 폰트·정렬·pt가 적용됨. 예비 스타일 사용 시 문건에 혼선이 있는지 추가 검증 필요.
+
+### 참고
+- 테스트 파일: `output/test_styled6.hwpx` (spacer 1~4 성공, 9 이후 실패 사례 포함)
+- 관련 이슈: `CURRENT_ISSUES.md` 항목 “Spacer 줄(라인스페이서) 폰트/크기 미스매치”
+
+## [2025-11-15] 문제: 생성한 HWPX가 한글에서 열리지 않음
+
+### 증상
+- `md_to_hwpx.py`로 만든 문서를 한글에서 열면 “문서 변환코드를 선택하라”는 오류가 뜨고, 내용이 깨진 바이너리처럼 보임.
+
+### 원인
+- OCF/HWPX 패키지 구성요소가 빠져 있었음.
+  - `META-INF/manifest.xml`, `META-INF/container.rdf`, `contents/content.hpf`의 spine 등이 누락.
+  - `version.xml` 속성도 최소값만 들어 있어서 Hancom 뷰어가 패키지를 인정하지 못함.
+
+### 해결 방법
+1. `test_inputmodel.hwpx`, `test_minimal_manual.hwpx`를 비교 분석해 필수 파일/속성을 정리.
+2. `md_to_hwpx.py`에 다음 빌더를 추가/수정:
+   - `build_manifest_xml()`, `build_container_rdf()`, `build_container_xml()` (rootfile 2개 등록).
+   - `build_content_hpf()`에서 manifest/spine/metadata를 표준대로 생성.
+   - `build_version_xml()` 속성 보완.
+3. `write_hwpx()`에서 누락된 XML을 ZIP에 포함하고, `mimetype`를 `application/hwp+zip`으로 수정.
+4. 새로 생성한 `output/test_styled?.hwpx`를 한글에서 열어 정상 동작 확인.
+
+### 참고
+- 관련 이슈: `converter/CURRENT_ISSUES.md` (2025-11-15 이전 기록)
+- 스펙 링크: `docs/hwpx_spec.md`
+- 비교용 샘플: `converter/test_inputmodel.hwpx`
+
+---
+
+<!-- 예시 (실제 문제 발생 시 이 예시 삭제)
+
+## [2024-11-15] 문제: 줄간격이 140%로 나옴
+
+### 증상
+- 설정은 160%인데 생성된 HWPX에서 140%로 표시
+- 한글 프로그램에서 확인 시 줄간격 틀림
+
+### 원인
+- HWPX 표준에서 줄간격은 비율이 아닌 절대값 사용
+- 160% = 1.6이 아니라 특정 단위 값 필요
+
+### 해결 방법
+```python
+# Before (잘못된 방법)
+line_spacing = 1.6
+
+# After (올바른 방법)
+line_spacing = 160  # 단위: %를 의미하는 정수값
+```
+
+### 참고
+- 표준 스펙: `docs/hwpx_spec.md` 섹션 3.2.4
+- 검색: `python tools/spec_search.py "줄간격 line-spacing"`
+
+-->

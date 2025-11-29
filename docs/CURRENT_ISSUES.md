@@ -1,126 +1,238 @@
-# CURRENT_ISSUES
+# Current Issues - 진행중인 이슈
 
-> 이 파일은 Phase 1.x/1.5 진행 중 발견된 열린 이슈를 요약합니다.
-
-## 2025-11-18 – Phase 1.5 Header/Footer 패턴
-
-### 현상
-
-- `converter/md_to_hwpx.py`에서 Tier1 샘플을 기준으로 머리말/꼬리말 HWPX 구조를 구현했으나, 실제 한글(HWP) 표시 결과가 기대와 다름.
-- 테스트 대상: `converter/sample_input.md` → `output/test_final.hwpx`.
-- 한글에서 열었을 때 관측한 결과:
-  - 머리말: **화면 상에 노출되지 않음** (section0.xml에는 header ctrl 구조가 있음).
-  - 꼬리말: 내용(`"꼬리말 테스트"`)은 보이지만, **정렬 없음 + 휴먼명조 15pt 정도로 표시**.
-
-### 구현 상태 (2025-11-18 기준)
-
-- Tier1 `(phase 1 finised) test_shift_sample-머리말꼬리말 추가.hwpx`의 `Contents/section0.xml`을 역공학하여 다음 패턴을 맞춤:
-  - 머리말(header):
-    - 위치: 첫 문단(`hp:p id="0"`) 안, 제목 테이블(`hp:tbl`)이 들어있는 `hp:run` 바로 뒤에 `hp:ctrl/hp:header` 삽입.
-    - 구조: `hp:header@id="1" applyPageType="BOTH"` → `hp:subList` → `hp:p id="0"` → `hp:run` → `hp:t`(탭 + 텍스트).
-    - 코드: `_append_header_footer_ctrl`에서 header용 `hp:p`에 `paraPrIDRef="8"`, `styleIDRef="0"`를 사용.
-  - 꼬리말(footer):
-    - 위치: 첫 SUBTITLE 문단(`paraPrIDRef == PARA_STYLE_MAP[BlockType.SUBTITLE]`) 안의 선행 run으로 `hp:run/hp:ctrl/hp:footer` 삽입.
-    - 구조: `hp:footer@id="3" applyPageType="BOTH"` → `hp:subList` → `hp:p id="0"` → `hp:run` → `hp:t`(꼬리말 텍스트).
-    - 코드: footer용 `hp:p`에 `paraPrIDRef="9"`, `styleIDRef="0"`를 사용.
-- `build_section0_xml`의 말미에서:
-  - `_build_header_footer_text(doc_meta)`로 헤더/푸터 텍스트 생성.
-  - `_append_header_footer_ctrl(root, header_text, footer_text)`를 `try/except`로 호출하여 section0 완성 후 ctrl 주입.
-
-### 원인(의심)
-
-- **스타일/paraPr 정의 불일치 가능성**
-  - Tier1 샘플의 `header.xml`과 현재 변환기가 사용하는 `header.xml`의 paraPr/charPr 및 style 정의가 다름.
-  - `paraPrIDRef="8"`, `"9"`가 머리말/꼬리말용 오른쪽 정렬 스타일로 정의되어 있지 않을 수 있음.
-- **머리말 표시 옵션/뷰 모드 차이 가능성** (사용자 환경 요인)
-  - section0.xml에는 `hp:header`가 존재하지만, 한글 UI에서 머리말/꼬리말 숨기기 옵션/보기 모드에 따라 비가시적일 수 있음.
-- **오른쪽 정렬 구현 방식 차이**
-  - 탭 + paraPr 조합만으로는 실제 기관 양식과 동일한 위치/폰트/정렬을 재현하지 못한 상황.
-
-### 영향 범위
-
-- 현재 Tier0/Tier1 샘플을 변환했을 때:
-  - 문서는 정상 오픈.
-  - 본문/제목/강조 테이블 등 기존 Phase 1.5 기능은 정상 작동.
-  - 머리말/꼬리말은 **구조적으로 존재하지만, 시각적 스타일이 스타일북 요구와 다름**.
-- 상위 Phase(표 템플릿, 요약표 등) 작업에 앞서, 머리말/꼬리말 스타일 정의를 보수해야 함.
-
-### To-Do / Next Steps
-
-1. Tier1 with_header 샘플의 `header.xml`과 현재 변환기의 `header.xml`을 diff 비교.
-   - 특히 paraPr id="8", id="9" 및 관련 charPr, style 정의를 검토.
-   - 필요 시 header/footer 전용 paraPr/charPr를 별도로 정의하고, 변환기에서 해당 ID를 사용하도록 수정.
-2. 머리말 표시 여부/옵션 검증.
-   - 동일 HWPX를 다른 PC/설치 환경에서 열어 머리말 노출 여부 확인.
-   - (선택) 머리말 내부 텍스트에 눈에 띄는 테스트 문자열을 넣어 실제 렌더링 여부를 재확인.
-3. 꼬리말 정렬/폰트 검증.
-   - 꼬리말 문단이 실제로 어떤 paraPr/charPr를 물고 있는지 한글 스타일 창으로 확인.
-   - 휴먼명조 15pt로 표시되는 원인이 header.xml 기본 스타일 때문인지 확인 후, 기관 스타일(예: 바탕글 11pt)로 맞추는 paraPr/charPr 정의 추가.
-4. 문서화/테스트 연계.
-   - 위 수정이 끝나면 Tier0/Tier1 샘플을 다시 변환하여, validator Tier 테스트 + 수동 눈검 검증 절차를 정리.
-   - 머리말/꼬리말 관련 회귀 테스트 케이스를 `tests/fixtures`에 추가하는 것을 고려.
+> Phase 1 개발 중 **현재 해결 중인** 문제들
+>
+> **목적:** AI 간 인수인계, 컨텍스트 유지, 중복 시도 방지
 
 ---
 
-(이 섹션은 GitHub Copilot가 2025-11-18 기준 상태를 요약한 것입니다. 이후 수정 시 날짜/상태를 갱신해 주세요.)
+## ⚠️ 중요
 
-## [해결됨] 2025-11-28 – Phase 1.5 표 색상/테두리 수정 완료
+이 파일은 **진행중인 이슈만** 기록합니다.
 
-### 해결된 문제
+**해결되면:**
 
-1. **대제목 표 1,3행**: 연보라 배경(#EBDEF1) + 테두리 없음 (NONE)
-2. **대제목 표 본문(2행)**: 테두리 없음 (NONE), 배경 없음
-3. **강조 표**: 연두 배경(#CDF2E4) + 0.12mm 실선 테두리 적용
-4. **요약표**: 점선(DOT) 0.12mm 테두리 적용
-5. **꼬리말**: 하드코딩된 "꼬리말 테스트" → 빈 문자열로 변경
-
-### 최종 수정 내용 (2025-11-28)
-
-- `converter/md_to_hwpx.py`의 borderFill ID를 **순차적 ID (34-37)**로 변경
-  - ID 34: 대제목 표 1,3행 spacer (연보라 #EBDEF1 + NONE 테두리)
-  - ID 35: 대제목 표 본문 (NONE 테두리, 배경 없음)
-  - ID 36: 강조 표 (연두 #CDF2E4 + SOLID 0.12mm)
-  - ID 37: 요약표 (DOT 0.12mm 점선)
-- `<hp:tbl borderFillIDRef="3">`: 표 외곽 테두리는 기존 SOLID ID 3 사용
-- `<hp:tc borderFillIDRef="XX">`: 각 셀은 개별 borderFill ID 참조
-
-### 핵심 발견 사항 (HWPX 스펙 관련)
-
-1. **LineType2 열거형**: `DOTTED`가 아니라 `DOT`가 올바른 값
-   - 잘못된 값 사용 시 테두리가 렌더링되지 않음
-2. **borderFill ID 순차성**: ID를 101+ 등 큰 값으로 점프하면 일부 환경에서 인식 안 될 수 있음
-   - 기존 ID (1-33) 바로 다음인 34-37을 사용하는 것이 안전
-3. **표 구조 분리**:
-   - `<hp:tbl borderFillIDRef>`: 표 전체 외곽 테두리 (container)
-   - `<hp:tc borderFillIDRef>`: 각 셀의 배경/테두리 (cell-level)
-
-### 주의사항 (AI 인수인계)
-
-- borderFill 정의 시 `borders` 파라미터를 누락하면 테두리가 NONE으로 설정됨
-- `fill_brush`만 있으면 배경색만 적용되고 테두리는 없음
-- 둘 다 필요하면 반드시 두 파라미터 모두 명시할 것
-- **점선 테두리는 `DOT`** (`DOTTED` 아님!)
-- **새 ID 추가 시 기존 최대 ID+1부터 순차적으로 부여** (큰 점프 금지)
+1. 내용을 `TROUBLESHOOTING.md`로 이동
+2. 이 파일에서 삭제 또는 [해결됨] 표시
 
 ---
 
-## [해결됨] 2025-11-20 → 2025-11-28 – Phase 1.5 표 보더/이중실선 불일치
+## 작성 규칙
 
-### 현상
+### 형식
 
-- 표 헤더/본문 보더가 스타일북·Tier1 샘플과 다르게 렌더링됨.
-- 헤더 배경(연보라) 누락, 오른쪽 열의 상/하 보더가 다른 행과 다름.
-- 중간 행 하단이 모두 굵은 실선으로 깔리거나, 마지막 행 얇은 실선만 남는 등 행·열별 보더 매핑이 일관되지 않음.
+```markdown
+## [진행중] 이슈 제목
 
-### 구현 상태
+**우선순위:** High / Medium / Low  
+**담당 AI:** 마지막으로 작업한 AI 이름
 
-- `converter/md_to_hwpx.py`에서 double-slim 테두리를 위해 borderFill 12~17을 정의하고, 헤더/중간행/마지막행에서 셀 좌·우 위치에 따라 ID를 매핑하도록 수정함.
-- 표 파서는 `<표 제목 : ...>` 뒤의 빈 줄을 건너뛰도록 보완했으며, 마커(◦/-,\*, bullet 변형)를 관용적으로 인식하도록 확장됨.
-- **2025-11-28 최종 해결**: borderFill ID를 순차적 34-37로 변경, 점선 타입을 `DOT`로 수정.
+### 상황
 
-### 해결 방법
+- 현재 어떤 상태인가
+- 어디까지 진행됐는가
 
-- `add_border_fill_custom()` 호출 시 `borders` 딕셔너리를 명시적으로 전달
-- 대제목/강조/요약표 각각의 borderFill ID에 스타일북 요구사항 반영
-- **순차적 ID 사용** (34-37): 기존 palette ID 다음 번호부터 연속 부여
-- **점선 타입 수정**: `DOTTED` → `DOT` (HWPX LineType2 스펙 준수)
+### 시도한 방법들
+
+1. [AI명 - 날짜] 방법1 → 결과
+2. [AI명 - 날짜] 방법2 → 결과
+
+### 다음 AI에게
+
+- 시도해볼 접근
+- 참고할 스펙 위치
+- 주의사항
+
+### 관련 파일
+
+- 영향받는 파일들
+```
+
+---
+
+## 진행중인 이슈
+
+---
+
+## [진행중] 2025-11-28 – 표 색상/테두리 미적용 (대제목/강조/요약)
+
+**우선순위:** High  
+**담당 AI:** GitHub Copilot (2025-11-27~28)
+
+### 증상
+
+- 대제목 표 1,3행: 연보라 배경(`#EBDEF1`) 없음
+- 강조 표: 연두 배경(`#CDF2E4`) 없음
+- 요약표: 점선 테두리 아닌 실선 또는 선 없음
+- **stylebook 정의대로 색상/테두리가 출력에 반영되지 않음**
+
+### 분석 과정
+
+#### 1차 시도: `add_border_fill_custom()` 호출 수정
+
+- **가설**: `fill_brush`만 전달하고 `borders` 누락
+- **수정**: ID 101-104에 `borders` + `fill_brush` 둘 다 전달
+- **결과**: ❌ 변화 없음
+
+```python
+# 수정한 코드 (라인 ~2274-2312)
+add_border_fill_custom(
+    101,
+    borders={
+        "left": ("SOLID", "0.12 mm"),
+        "right": ("SOLID", "0.12 mm"),
+        "top": ("SOLID", "0.12 mm"),
+        "bottom": ("SOLID", "0.12 mm"),
+    },
+    fill_brush={"faceColor": "#EBDEF1", "hatchColor": "#999999", "alpha": "0"},
+)
+# ID 102, 103, 104도 동일하게 수정
+```
+
+#### 2차 시도: `<tbl>` 태그의 borderFillIDRef 수정
+
+- **가설**: 테이블 셀(`<tc>`)은 ID 101-104를 참조하지만, `<tbl>` 태그 자체는 `"3"`을 참조
+- **발견**:
+  | 테이블 | `<tbl>` borderFillIDRef | `<tc>` borderFillIDRef |
+  |--------|------------------------|------------------------|
+  | 대제목 | "3" ❌ | 101, 102 ✅ |
+  | 강조 | "3" ❌ | 103 ✅ |
+  | 요약 | "104" ✅ | 104 ✅ |
+- **수정 위치**:
+  - 라인 1311: 대제목 `<tbl>` → `TITLE_TABLE_SPACER_BORDER_ID` (101)
+  - 라인 1427: 강조 `<tbl>` → `EMPH_TABLE_BORDER_ID` (103)
+- **결과**: ❌ 변화 없음
+
+### 현재 상태
+
+- header.xml에 borderFill ID 101-104 정의 **존재함** (확인 완료)
+- 테이블 함수에서 `<tc>` 태그에 올바른 borderFillIDRef **사용함**
+- `<tbl>` 태그의 borderFillIDRef도 **수정 완료**
+- **그러나 출력에 색상/테두리가 여전히 반영되지 않음**
+
+### 미확인 사항 (다음 AI에게)
+
+1. **header.xml과 section0.xml의 참조 관계**
+   - borderFill ID가 header.xml에 정의되어 있어도, section0.xml에서 참조 시 ID 매핑이 다를 수 있음?
+2. **HWPX 표준 스펙 확인 필요**
+   - `<tbl borderFillIDRef>`와 `<tc borderFillIDRef>` 중 어느 것이 우선하는지?
+   - borderFill의 `<hc:fillBrush>` 구조가 올바른지?
+3. **실제 출력 파일 검증**
+
+   - 생성된 hwpx를 unzip하여 header.xml의 borderFill 101-104 정의 확인
+   - section0.xml에서 `<tc borderFillIDRef="101">` 등이 실제로 존재하는지 확인
+
+4. **참조용 정상 파일과 비교**
+   - `validator/tier_test_inputmodel/(2-1)test_inputmodel.hwpx`의 구조와 비교
+   - 정상 작동하는 표가 어떤 borderFill 구조를 사용하는지
+
+### 시도할 수 있는 접근
+
+1. **출력 hwpx 직접 분석**: unzip 후 header.xml, section0.xml 비교
+2. **정상 inputmodel과 diff**: 색상이 올바르게 적용된 파일과 구조 비교
+3. **fillBrush 구조 확인**: `<hc:winBrush>` 대신 다른 요소가 필요할 수 있음
+4. **borderFill ID 범위 확인**: 한글에서 특정 ID 범위만 인식할 가능성
+
+### 관련 파일
+
+- `converter/md_to_hwpx.py`:
+  - 라인 212-215: 상수 정의 (TITLE_TABLE_SPACER_BORDER_ID 등)
+  - 라인 1274-1389: `_append_title_table()` 함수
+  - 라인 1391-1470: `_append_emphasis_table()` 함수
+  - 라인 1709-1870: `_append_summary_table()` 함수
+  - 라인 2029-2065: `add_border_fill_custom()` 함수 정의
+  - 라인 2272-2315: borderFill ID 101-104 정의
+- `converter/style_textbook.md`: stylebook 색상 정의
+- `validator/tier_test_inputmodel/(2-1)test_inputmodel.hwpx`: 참조용 정상 파일
+
+---
+
+## [진행중] Phase1.5 Validator가 실제 문서와 불일치 리포트 다수 발생
+
+**우선순위:** High  
+**담당 AI:** GitHub Copilot (2025-11-16)
+
+### 상황
+
+- `validator/cli.py templates/phase1_5_sample.yaml output/test_final.hwpx --format text` 실행 시 7개의 ERROR가 연속적으로 발생.
+- 증상: YAML 템플릿은 8개 미만 블록(제목/메타 표/요약/불릿/노트/결재 표/서명)을 기대하나, 실제 `output/test_final.hwpx`는 Phase1 변환기의 기본 보고서 텍스트라 구조가 완전히 다름.
+- 현재 validator 로직은 table/list/text 순서를 엄격 비교하기 때문에 실제 문서가 기대 템플릿과 다르면 모든 블록이 실패 처리됨.
+
+### 시도한 방법들
+
+1. [Copilot - 11/16] Phase1.5 validator 코어 구현 (`validator/phase1_5_validator.py`) 및 CLI 연동 → 정상적으로 HWPX를 열어 diff 출력하지만, 템플릿과 내용이 달라 모든 블록이 실패됨.
+2. [Copilot - 11/16] section0.xml 파싱 시 중복 namespace 제거 및 spacer 문단 건너뛰기 로직 추가 → XML 파싱 오류 해결, 텍스트/테이블 비교까지 수행됨.
+
+### 다음 AI에게
+
+- 템플릿을 실제 Phase1 출력과 맞춰 업데이트하거나, validator에서 BlockType 매핑(예: 제목 테이블 → 실제 표 구조) 규칙을 도입해야 함.
+- HWPX 문서 파싱 시 paraPrIDRef/charPrIDRef 기반으로 BlockType을 추정하는 로직이 아직 없음. 이를 도입하면 템플릿에 현재 BlockType 대신 스타일 기준 규칙을 쓸 수 있음.
+- 리스트(`bullet_section`)는 현재 “marker로 시작하는 연속 문단”만 감지하므로, Phase1 출력에 맞춰 marker/정규식 조건을 재설계 필요.
+- 참고 파일: `validator/phase1_5_validator.py`, `templates/phase1_5_sample.yaml`, `output/test_final.hwpx`.
+
+### 관련 파일
+
+- `validator/phase1_5_validator.py`
+- `validator/cli.py`
+- `templates/phase1_5_sample.yaml`
+- `output/test_final.hwpx`
+
+## [해결됨] Spacer 줄(라인스페이서) 폰트/크기 미스매치
+
+**우선순위:** Medium  
+**담당 AI:** Codex (2025-11-17)
+
+### 상황
+
+- style_textbook 규칙에 따라 spacer(소제목/본문/설명2/설명3 사이 공백 줄)를 각각 10/8/6/4pt 맑은 고딕으로 넣어야 함.
+- 2025-11-15 분석 결과: **바탕글 문단에서 run-level charPr ID가 0~8 범위를 벗어나면 한글이 높이를 무시**하고 기본값으로 되돌린다.
+  - spacer ID를 1~4로 낮추면 정확히 10/8/6/4pt로 표시되는 것이 확인됨.
+  - 본문/설명 스타일을 위해 6 이상 ID를 사용했더니 9번 이후부터 다시 fallback 증상이 반복됨.
+- `<hp:linesegarray>`는 쓰지 않기로 했으며, 순수하게 run의 charPr/paraPr 조합으로 줄간격을 제어해야 한다는 요구 그대로 유지.
+- `output/test_styled8.hwpx` 기준: **스타일 ID 1~6(본문은 charPr 8)만 요구사항을 정확히 준수**하고 있으며, 예비 스타일 7/9/10/11은 현재 폰트·정렬·pt값이 사양과 다름. 예비 스타일이 잘못 쓰이지 않도록 추가 가이드 필요.
+
+### 시도한 방법들
+
+1. [Codex - 11/15] spacer용 paraPr/style을 따로 정의 → **한글에서 기본 스타일로 덮여 보임**
+2. [Codex - 11/15] spacer 문단을 바탕글 스타일로 통일하고 run에만 charPr 10~13 (맑은고딕 10/8/6/4pt) 적용 → **한글 결과에서 여전히 4/15/10/10pt로 관측됨**
+3. [Codex - 11/15] spacer charPr ID를 1~4로 낮춰 재배치 → **한글에서 정확히 10/8/6/4pt로 동작**
+4. [Codex - 11/15] 일반 텍스트 charPr를 6~12로 이동 → **ID 9 이후 다시 fallback 발생 (문제 재현)**
+5. [Codex - 11/15] 문단 run-level charPr를 제거하고 styleIDRef→header의 charPr에 의존하도록 수정 → **HWP에서 검증 필요 (style 경유 시 charPr ID 제한이 풀리는지 확인 예정)**
+6. [Codex - 11/17] charPr ID 0~8 범위만 재사용하도록 header.xml/런 매핑 재배치 (본문/설명2=0, 주제목=5, 소제목=6, 설명3=7, 강조=8) 및 RUN_CHAR_OVERRIDE_MAP 복구 → **Hangul에서 spacer/본문/제목 모두 의도대로 표시됨 (확인 완료)**
+
+### 다음 AI에게
+
+- Hangul 0~8 제약을 준수하는 한 추가 작업 불필요. 새 스타일이 필요하면 charPr ID 0~8 범위에서 재배치하거나 전용 paraPr를 도입해야 함.
+- `converter/TROUBLESHOOTING.md`에 해결 기록 남김. 추가 재현 시 해당 문서를 참고.
+- 참고: `output/test_styled6.hwpx`, `output/test_run.hwpx`
+
+### 관련 파일
+
+- `converter/md_to_hwpx.py` (`build_header_xml`, `build_section0_xml`)
+- 출력 예시: `output/test_styled6.hwpx`
+
+<!-- 예시 형식 (실제 이슈 발생 시 참고)
+
+## [진행중] 제목 스타일이 적용 안됨
+
+**우선순위:** High
+**담당 AI:** GitHub Copilot (2024-11-15)
+
+### 상황
+- h1 제목을 18pt 굵게로 설정했으나 실제 HWPX에서 12pt로 나옴
+- h2는 정상 작동
+
+### 시도한 방법들
+1. [Copilot - 11/15] styles.py에서 크기 직접 지정 → 실패
+2. [Copilot - 11/15] HWPX XML에서 직접 수정 → 부분 성공 (굵기만)
+
+### 다음 AI에게
+- 표준 스펙 3.1.2 "제목 스타일" 섹션 참고 필요
+- CharShape과 ParaShape 두 곳 모두 설정해야 할 가능성
+- 검색: `python tools/spec_search.py "제목 heading style"`
+
+### 관련 파일
+- `converter/hwpx_generator.py` (L45-67)
+- `converter/styles.py` (L12-24)
+
+-->
