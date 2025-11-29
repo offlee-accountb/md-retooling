@@ -157,7 +157,7 @@ tests/
 
 - **디버깅 팁**
   - HWPX는 ZIP이므로 `unzip -p output/foo.hwpx Contents/section0.xml | xmllint --format -` 으로 즉시 확인
-  - YAML ↔ HWPX 매핑 표를 `docs/LAYOUT_RECIPES.md`에 추가하여 다음 에이전트와 공유
+  - YAML ↔ HWPX 매핑 표를 `docs/HWPX_IMPLEMENTATION_NOTES.md`에 추가하여 다음 에이전트와 공유
 
 - **Phase 2.x로 확장 시**
   - YAML 스키마를 JSON Schema로 정식 정의 → VS Code 자동 완성 제공

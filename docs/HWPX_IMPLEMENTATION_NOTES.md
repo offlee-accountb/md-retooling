@@ -334,7 +334,180 @@ borderfills = [
 
 ---
 
-# 5. 추후 추가 예정
+# 5. YAML 기반 스타일 관리
+
+## 핵심 아키텍처
+
+모든 스타일 정의는 `templates/core_styles.yaml`에서 중앙 관리됩니다.
+하드코딩 대신 YAML에서 동적으로 로드하여 유지보수성을 높였습니다.
+
+### YAML → Converter 흐름
+
+```
+templates/core_styles.yaml
+         │
+         ▼
+validator/template_loader.py
+         │ StyleConfig 데이터클래스로 파싱
+         ▼
+CONFIG 전역 객체
+         │
+         ├──→ CONFIG.fonts          (폰트 정의)
+         ├──→ CONFIG.char_styles    (charPr 정의)
+         ├──→ CONFIG.para_styles    (paraPr 정의)
+         ├──→ CONFIG.styles         (스타일 정의)
+         ├──→ CONFIG.border_fills   (borderFill 정의)
+         └──→ CONFIG.document_mode  (문서 모드 설정)
+                  │
+                  ├──→ style_mode: "stylebook" | "normal"
+                  └──→ use_line_spacers: true | false
+```
+
+### YAML 기반으로 전환된 영역
+
+| 영역 | 이전 방식 | 현재 방식 | 비고 |
+|------|----------|----------|------|
+| fonts | 하드코딩 리스트 | `CONFIG.fonts` | 폰트명, 타입 등 |
+| charProperties | `char_defs` 딕셔너리 | `CONFIG.char_styles` | 연속 ID 자동 보장 |
+| paraProperties | `para_defs` 딕셔너리 | `CONFIG.para_styles` | 중복 ID 문제 해결 |
+| styles | `style_defs` 리스트 | `CONFIG.styles` | 19개 스타일 정의 |
+| borderFills | `BORDER_FILLS` 리스트 | `CONFIG.border_fills` | ID 1=색없음 규칙 준수 |
+
+### 장점
+
+1. **단일 소스**: 모든 스타일이 한 파일에서 관리됨
+2. **검증 용이**: YAML 포맷으로 휴먼리더블
+3. **확장 용이**: 새 스타일 추가 시 YAML만 수정
+4. **ID 연속성 보장**: 배열 순서대로 ID 할당
+
+### 주의사항
+
+⚠️ YAML 수정 시 반드시 확인:
+- charPr/paraPr ID는 배열 순서대로 0, 1, 2, 3... 할당됨
+- borderFill ID는 배열 순서대로 1, 2, 3, 4... 할당됨 (0 아님!)
+- style ID는 YAML에 명시된 `id` 필드 사용
+
+---
+
+# 6. 레이아웃 레시피 (Layout Recipes)
+
+Phase 1에서 주제목·강조 표 같은 고정 규격을 반복 구현하면서 얻은 경험치입니다.
+
+## 6.1 페이지/섹션 공통 설정
+
+- `landscape="WIDELY"` + `width="59528"` + `height="84186"` → A4 세로
+- 여백: 좌/우 20 mm, 상/하 15 mm, 머리말/꼬리말 10 mm
+- `secPr`에 반드시 포함할 요소:
+  - `hp:grid`, `hp:startNum`, `hp:visibility`, `hp:lineNumberShape`
+  - `hp:footNotePr`, `hp:endNotePr`
+  - `hp:pageBorderFill` ×3 (BOTH/EVEN/ODD)
+  - `hp:ctrl/hp:colPr` (단일 칼럼)
+
+## 6.2 표 스타일링 구조
+
+### borderFill ID 전략
+
+기존 palette ID (1-33) 다음부터 순차적으로 부여: 34, 35, 36, 37...
+
+⚠️ **절대 큰 값으로 점프하지 말 것** (예: 101+) — 일부 환경에서 인식 안 됨
+
+### 현재 사용 중인 커스텀 borderFill ID
+
+| ID  | 상수명                        | 용도         | 테두리      | 배경색           |
+| --- | ----------------------------- | ------------ | ----------- | ---------------- |
+| 34  | TITLE_TABLE_SPACER_BORDER_ID  | 대제목 1,3행 | NONE        | #EBDEF1 (연보라) |
+| 35  | TITLE_TABLE_BODY_BORDER_ID    | 대제목 본문  | NONE        | 없음             |
+| 36  | EMPH_TABLE_BORDER_ID          | 강조 표      | SOLID 0.12mm| #CDF2E4 (연두)   |
+| 37  | SUMMARY_TABLE_BORDER_ID       | 요약표       | DOT 0.12mm  | 없음             |
+
+### 표 XML 구조
+
+```xml
+<!-- 표 외곽 (container) -->
+<hp:tbl borderFillIDRef="3">  <!-- SOLID 외곽선 -->
+  <hp:tr>
+    <!-- 각 셀 (cell-level 배경/테두리) -->
+    <hp:tc borderFillIDRef="34">  <!-- 연보라 배경 -->
+      ...
+    </hp:tc>
+  </hp:tr>
+</hp:tbl>
+```
+
+### HWPX LineType2 유효 값
+
+- `NONE`, `SOLID`, `DOT`, `DASH`, `DASH_DOT`, `DASH_DOT_DOT`, `LONG_DASH`
+- `CIRCLE`, `DOUBLE_SLIM`, `SLIM_THICK`, `THICK_SLIM`, `SLIM_THICK_SLIM`
+- ⚠️ `DOTTED`는 유효하지 않음! 반드시 `DOT` 사용
+
+## 6.3 주제목 표 (TITLE_TABLE)
+
+구조: `hp:p → hp:run → hp:tbl` (rowCnt=3, colCnt=1)
+
+| 항목           | 값 / 설명                                                   |
+|----------------|-------------------------------------------------------------|
+| `hp:sz.height` | `TITLE_ROW1 (1 pt) + BODY (3174) + TITLE_ROW3 (1 pt)`       |
+| `hp:pos`       | treatAsChar=0, flowWithText=1, vertRelTo=PARA, horzRelTo=COLUMN |
+| `outMargin`    | 283 (좌/우/상/하)                                           |
+| `inMargin`     | 510 (좌/우), 141 (상/하)                                    |
+
+| 행 | 텍스트      | charPr     | cellSz.height | borderFill |
+|----|-------------|------------|---------------|------------|
+| 1  | `" "`       | 1 pt 폰트  | ONE_PT_HWP    | 5 (연보라) |
+| 2  | 실제 제목   | 15 pt Bold | 3174          | 4 (투명)   |
+| 3  | `" "`       | 1 pt 폰트  | ONE_PT_HWP    | 5 (연보라) |
+
+## 6.4 강조 박스 (EMPHASIS_TABLE)
+
+구조: `hp:p → hp:run → hp:tbl` (rowCnt=1)
+
+| 항목           | 값 / 설명                                     |
+|----------------|-----------------------------------------------|
+| `hp:sz.height` | 2632                                          |
+| `cellMargin`   | 566 (좌/우/상/하)                             |
+| `borderFill`   | 6 (`#CDF2E4` 연두)                            |
+| 셀 텍스트      | `◈ {block.text}`                              |
+
+## 6.5 들여쓰기 & 줄 간격
+
+### 핵심 규칙
+
+- **행걸이(hanging indent)는 `margin.intent`만 사용**
+- `margin.left/right`는 0으로 유지 (Hangul이 전체 문단을 이동시킴)
+- intent 값은 음수 = "첫 줄만 왼쪽으로 튀어나옴"
+
+### BlockType별 권장 intent
+
+| BlockType | 표시 | intent (pt) | intent (HWPUNIT) |
+|-----------|------|-------------|------------------|
+| BODY (`◦`) | 내용 | 30 pt       | -3000            |
+| DESC2 (`-`) | 설명2| 37.5 pt     | -3750            |
+| DESC3 (`*`) | 설명3| 35 pt       | -3500            |
+
+### 줄 간격
+
+- 기본값: `lineSpacing type="PERCENT" value="160"`
+- DESC3도 LEFT 정렬 유지 (CENTER 자동 전환 방지)
+
+## 6.6 Spacer 규칙
+
+| 대상             | charPr | 내용   |
+|------------------|--------|--------|
+| 소제목 전 spacer | ID 1   | `" "`  |
+| 본문 전 spacer   | ID 2   | `" "`  |
+| 설명2 전 spacer  | ID 3   | `" "`  |
+| 설명3 전 spacer  | ID 4   | `" "`  |
+
+> `use_line_spacers: false` 설정 시 스페이서 삽입 생략
+
+## 6.7 Inline Bold
+
+`**강조**` 패턴을 탐지해 강조용 charPr run을 삽입.
+빈 문자열일 경우 조용히 반환.
+
+---
+
+# 7. 추후 추가 예정
 
 ---
 
@@ -347,4 +520,4 @@ borderfills = [
 
 ---
 
-*마지막 업데이트: 2024년 11월 - exp16 borderFill 실험 추가*
+*마지막 업데이트: 2025년 1월 - YAML 기반 스타일 관리, Document Mode 추가*

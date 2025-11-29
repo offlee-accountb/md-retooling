@@ -66,7 +66,7 @@ python tools/spec_search.py "줄간격 line-spacing"
    - 목표: 마크다운 → 한글 문서 변환
    - 조정 가능: 줄간격, 양식, 폰트, 제목 스타일
    - 지속적 개선 필요
-   - 📘 표/레이아웃 레시피는 `docs/LAYOUT_RECIPES.md`에 누적하여 공유
+   - 📘 표/레이아웃 레시피는 `docs/HWPX_IMPLEMENTATION_NOTES.md` 6장 참조
 
 2. **HWPX 검증 툴**
    - HWPX 파일 구조 시각화
@@ -185,6 +185,57 @@ def convert_md_to_hwpx(
 - `validator/cli.py`(가칭): `md_to_hwpx.py` 결과와 YAML을 함께 받아 구조/스타일 diff 리포트 출력
 - `tests/fixtures/`: 입력 MD, 기대 YAML, 승인된 HWPX 샘플을 한 세트로 유지하여 회귀 테스트 가능
 - 목표: 새로운 양식 추가 시 YAML만 갱신하면 변환기와 검증기가 동시에 기대치를 공유하도록 함
+
+#### Document Mode (문서 모드 설정)
+
+converter는 `core_styles.yaml`의 `document_mode` 섹션을 통해 두 가지 독립적인 설정을 지원합니다:
+
+**style_mode** (스타일 모드):
+| 값 | 설명 | 용도 |
+|-----|------|------|
+| `"stylebook"` | BlockType별 전용 스타일 사용 | 제목/본문/번호문단 각각 다른 스타일 (기본값) |
+| `"normal"` | 모든 텍스트가 style_id=0 (바탕글) | 단순한 문서, 스타일 충돌 방지 |
+
+**use_line_spacers** (스페이서 사용):
+| 값 | 설명 | 용도 |
+|-----|------|------|
+| `true` | 블록 사이에 스페이서 문단 삽입 | 블록 간격 확보 (기본값) |
+| `false` | 스페이서 없음 | 문단 간격으로만 조절 |
+
+**4가지 조합:**
+```
+┌─────────────────┬──────────────────┬──────────────────┐
+│                 │ use_line_spacers │ use_line_spacers │
+│                 │      true        │      false       │
+├─────────────────┼──────────────────┼──────────────────┤
+│ style_mode:     │ 전용 스타일 +    │ 전용 스타일만    │
+│ "stylebook"     │ 스페이서 (기본)  │                  │
+├─────────────────┼──────────────────┼──────────────────┤
+│ style_mode:     │ 바탕글 통일 +    │ 바탕글만         │
+│ "normal"        │ 스페이서         │ (최소 설정)      │
+└─────────────────┴──────────────────┴──────────────────┘
+```
+
+**YAML 설정 예시:**
+```yaml
+document_mode:
+  style_mode: "stylebook"   # 또는 "normal"
+  use_line_spacers: true    # 또는 false
+```
+
+**코드 흐름:**
+```
+core_styles.yaml
+      │
+      ▼
+template_loader.py
+      │ DocumentMode 클래스로 파싱
+      ▼
+CONFIG.document_mode
+      │
+      ├──→ _build_style_maps(): style_mode에 따라 스타일 매핑 분기
+      │
+      └──→ _build_document_body(): use_line_spacers 조건으로 스페이서 삽입
 
 #### Phase 1.5 표 스타일링 구조 (2025-11-28 확정)
 
