@@ -507,7 +507,111 @@ Phase 1에서 주제목·강조 표 같은 고정 규격을 반복 구현하면�
 
 ---
 
-# 7. 추후 추가 예정
+# 7. linesegarray (줄 레이아웃 캐시)
+
+## 개요
+
+`<hp:linesegarray>`는 문단 내 각 줄의 레이아웃 정보를 담는 **캐시 데이터**입니다.
+한글이 파일을 열 때 자동으로 계산하므로, **텍스트 주입 시 반드시 제거**해야 합니다.
+
+## 문제 상황
+
+기존 HWPX 템플릿에 텍스트를 주입하면 **긴 텍스트가 자동 줄바꿈되지 않는** 현상 발생.
+
+### 원인
+
+```xml
+<!-- 원본 템플릿: 짧은 텍스트 → lineseg 1개 -->
+<hp:p id="7">
+    <hp:run><hp:t>(추진 배경)</hp:t></hp:run>
+    <hp:linesegarray>
+        <hp:lineseg textpos="0" vertpos="10802" ... flags="393216"/>
+    </hp:linesegarray>
+</hp:p>
+
+<!-- 주입 후: 긴 텍스트인데 lineseg는 여전히 1개 → 줄바꿈 안 됨 -->
+<hp:p id="7">
+    <hp:run><hp:t>(추진 배경) 중소기업의 스마트공장 도입 시 기술 검증 및 실증 환경 부족 문제 해소하고...</hp:t></hp:run>
+    <hp:linesegarray>
+        <hp:lineseg textpos="0" vertpos="10802" ... flags="393216"/>  <!-- 여전히 1개! -->
+    </hp:linesegarray>
+</hp:p>
+```
+
+### lineseg 구조 분석
+
+| 속성 | 설명 |
+|------|------|
+| `textpos` | 해당 줄의 시작 문자 인덱스 (0, 41, 84, ...) |
+| `vertpos` | 세로 위치 (HWPUNIT) |
+| `vertsize` | 줄 높이 |
+| `horzsize` | 가로 크기 (페이지 너비) |
+| `flags` | 첫 줄=`0x60000` (393216), 이후 줄=`0x160000` (1441792) |
+
+정상적인 긴 텍스트:
+```xml
+<!-- 72자 텍스트 → lineseg 2개 -->
+<hp:linesegarray>
+    <hp:lineseg textpos="0" ... flags="393216"/>   <!-- 첫 줄 -->
+    <hp:lineseg textpos="41" ... flags="1441792"/> <!-- 둘째 줄 -->
+</hp:linesegarray>
+```
+
+## 해결 방법
+
+### ✅ 권장: linesegarray 완전 제거
+
+```python
+import re
+
+LINESEGARRAY_PATTERN = re.compile(
+    r'<hp:linesegarray[^>]*>.*?</hp:linesegarray>', 
+    re.DOTALL
+)
+
+def remove_linesegarray(xml_content: str) -> str:
+    """linesegarray 제거 - 한글이 자동 재계산"""
+    return LINESEGARRAY_PATTERN.sub('', xml_content)
+```
+
+### 결과
+
+- `linesegarray` 없는 파일을 한글에서 열면 자동으로 레이아웃 재계산
+- 긴 텍스트도 정상적으로 자동 줄바꿈됨
+
+## 적용 위치
+
+| 파일 | 함수 | 설명 |
+|------|------|------|
+| `injector/keyword_injector.py` | `_process_section()` | 키워드 주입 시 제거 |
+| `injector/unified_injector.py` | `_process_section()` | 통합 주입 시 제거 |
+| `converter/md_to_hwpx.py` | - | 직접 생성 시 linesegarray 미포함 |
+
+## 주의사항
+
+### 가끔 줄바꿈이 안 되는 경우
+
+| 가능성 | 설명 | 확인 방법 |
+|--------|------|----------|
+| 일부 섹션만 제거됨 | section0.xml 외 다른 섹션 | 모든 section*.xml 처리 |
+| 표 내부 셀 | `<hp:tc>` 안의 linesegarray | 표 셀 내부도 제거 필요 |
+| 머리말/꼬리말 | masterPage.xml 내부 | masterPage도 처리 필요 |
+| 텍스트박스 | `<hp:textart>` 등 특수 요소 | 해당 요소 내부 확인 |
+
+### 제거 시 안전성
+
+- 한글 2020 이상에서 테스트 완료
+- 파일 손상 없음
+- 저장 시 한글이 자동으로 linesegarray 재생성
+
+## 관련 이슈
+
+- `docs/TROUBLESHOOTING.md` 참고: "향후 과제: linesegarray flags 직접 제어"
+- `docs/CURRENT_ISSUES.md` 참고: "linesegarray는 쓰지 않기로 함"
+
+---
+
+# 8. 추후 추가 예정
 
 ---
 

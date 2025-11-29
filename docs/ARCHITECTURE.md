@@ -103,8 +103,90 @@ python tools/spec_search.py "줄간격 line-spacing"
    - 텍스트 → MD 자동 생성
    - 수동 입력과 선택 가능
 
-### Phase 2.5: 템플릿 반자동화 (초장기)
-4. **템플릿 리버스 엔지니어링 툴**
+### Phase 2.5: 템플릿 주입 시스템 (진행중)
+
+**목표:** 기존 HWPX 템플릿에 데이터를 주입하여 문서 생성 자동화
+
+#### 전제조건: HWP → HWPX 변환
+
+| 방식 | 채택 여부 | 이유 |
+|------|----------|------|
+| 자동 변환 도구 (pyhwpx 등) | ❌ 불채택 | 60% 성공률, 파일 손상 리스크 |
+| **사용자 직접 변환** | ✅ 채택 | 한컴 "다른 이름으로 저장 → HWPX" 100% 정합성 |
+
+> 💡 매출 5천만원 달성 전까지는 고객에게 HWPX 변환 책임을 넘기는 것이 현실적
+
+#### 파이프라인 개요
+
+```
+[사용자 제공]
+     │
+     ▼
+[HWPX 템플릿] ──→ [템플릿 태깅] ──→ [{{KEY}} 플레이스홀더 삽입]
+                       │
+                       ▼
+              [LLM 데이터 생성] ──→ generated_data.json
+                       │
+                       ▼
+              [Injector 주입] ──→ [완성된 HWPX]
+```
+
+#### 구현 상태
+
+| 단계 | 설명 | 상태 | 위치 |
+|------|------|------|------|
+| 템플릿 준비 | 사용자가 HWPX로 저장 | ✅ 사용자 책임 | - |
+| 템플릿 태깅 | `{{KEY}}` 플레이스홀더 삽입 | 📝 수동/반자동 | `input/hwpx_templates/` |
+| 데이터 생성 | LLM이 schema.json 기반 데이터 생성 | 📝 설계중 | 외부 LLM |
+| **주입 (Inject)** | 플레이스홀더 치환 & 재패키징 | ✅ POC 완료 | `injector/exp_inject.py` |
+
+#### 핵심 설계 결정
+
+1. **플레이스홀더 방식**: `{{KEY}}` 패턴으로 결정적(deterministic) 치환
+2. **리스트 확장**: `{{ITEMS}}` → 여러 `<hp:p>` 문단으로 자동 확장
+3. **표 주입**: `{{TABLE_DATA}}` → `<hp:tbl>` 구조로 렌더링 (개발 예정)
+4. **HWPX 무결성**: mimetype 저장 방식, ID 연속성 등 Phase 1 규칙 준수
+
+#### 폴더 구조
+
+```
+injector/
+├── exp_inject.py      # POC: 플레이스홀더 치환 스크립트
+└── README.md          # 사용법 가이드
+
+input/
+├── md/                # 입력 마크다운 파일
+├── hwpx_templates/    # HWPX 템플릿 ({{KEY}} 플레이스홀더 포함)
+└── reference/         # 샘플 데이터 (sample_data.json)
+```
+
+#### 사용 예시
+
+```bash
+# 1. 템플릿 준비 (사용자가 한글에서 HWPX로 저장)
+# 2. 템플릿에 {{TITLE}}, {{NAME}} 등 플레이스홀더 삽입
+
+# 3. 주입 실행
+python injector/exp_inject.py \
+  --template input/hwpx_templates/template.hwpx \
+  --data input/reference/sample_data.json \
+  --output output/injected.hwpx
+```
+
+#### sample_data.json 예시
+
+```json
+{
+  "TITLE": "보고서 제목",
+  "NAME": "홍길동",
+  "ITEMS": ["항목 1", "항목 2", "항목 3"]
+}
+```
+
+---
+
+### Phase 3: 템플릿 리버스 엔지니어링 (장기)
+4. **템플릿 자동 분석 툴**
    - 목표: 새 양식 추가 시간 단축 (3주 → 3일)
    - HWPX 샘플 → 구조 자동 분석
    - 변수 패턴 자동 탐지 ("___", "OOO" 등)
