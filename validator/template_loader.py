@@ -149,11 +149,21 @@ class BorderFillDef:
 
 
 @dataclass
+class DocumentMode:
+    """문서 모드 설정."""
+    style_mode: str = "stylebook"  # "stylebook" | "normal"
+    use_line_spacers: bool = True
+
+
+@dataclass
 class StyleConfig:
     """HWPX 스타일 설정 전체."""
     version: str
     template_id: str
     description: str
+    
+    # 문서 모드
+    document_mode: DocumentMode = field(default_factory=DocumentMode)
     
     # 단위
     hwp_per_mm: float = 283.464566929
@@ -248,6 +258,13 @@ def load_style_config(path: Path | str) -> StyleConfig:
     version = data.get("version", "1.0")
     template_id = data.get("template_id", "default")
     description = data.get("description", "")
+    
+    # 문서 모드
+    doc_mode_data = data.get("document_mode", {})
+    document_mode = DocumentMode(
+        style_mode=doc_mode_data.get("style_mode", "stylebook"),
+        use_line_spacers=doc_mode_data.get("use_line_spacers", True),
+    )
     
     # 단위
     units = data.get("units", {})
@@ -378,6 +395,7 @@ def load_style_config(path: Path | str) -> StyleConfig:
         version=version,
         template_id=template_id,
         description=description,
+        document_mode=document_mode,
         hwp_per_mm=hwp_per_mm,
         hwp_per_pt=hwp_per_pt,
         page=page,

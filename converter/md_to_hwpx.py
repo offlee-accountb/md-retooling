@@ -107,7 +107,12 @@ class DocumentMetadata:
 # ---------------------------------------------------------------------------
 
 def _build_style_maps() -> tuple:
-    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성."""
+    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성.
+    
+    style_mode에 따라:
+    - "stylebook": BlockType별 전용 스타일 사용
+    - "normal": 모든 STYLE_ID_MAP을 "0" (바탕글)으로 통일
+    """
     # BlockType 이름 → YAML 키 매핑
     block_to_yaml = {
         BlockType.TITLE: "title",
@@ -123,12 +128,20 @@ def _build_style_maps() -> tuple:
     char_map = {}
     style_map = {}
     
+    # style_mode 확인
+    is_normal_mode = CONFIG.document_mode.style_mode == "normal"
+    
     for block_type, yaml_key in block_to_yaml.items():
         style = CONFIG.get_style(yaml_key)
         if style:
+            # paraPr, charPr는 항상 개별 적용 (서식 유지)
             para_map[block_type] = str(style.para_pr_id)
             char_map[block_type] = str(style.char_pr_id)
-            style_map[block_type] = str(style.style_id)
+            # style_mode에 따라 styleIDRef 결정
+            if is_normal_mode:
+                style_map[block_type] = "0"  # 바탕글
+            else:
+                style_map[block_type] = str(style.style_id)
         else:
             # Fallback to 0 if not defined
             para_map[block_type] = "0"
@@ -2297,30 +2310,17 @@ def build_header_xml() -> bytes:
             },
         )
 
-    style_defs = [
-        (0, "바탕글", "Normal", 0, 0),
-        (1, "주제목", "MainTitle", 1, 5),
-        (2, "소제목", "SubTitle", 2, 6),
-        (3, "본문", "Body", 9, 0),
-        (4, "설명2", "Desc2", 8, 0),
-        (5, "설명3", "Desc3", 10, 7),
-        (6, "강조", "Emphasis", 6, 8),
-        (7, "예비제목", "ReserveHeading", 7, 5),
-        (8, "예비본문A", "ReserveBodyA", 8, 0),
-        (9, "예비본문B", "ReserveBodyB", 9, 7),
-        (10, "예비캡션", "ReserveCaption", 10, 7),
-        (11, "예비강조", "ReserveEmphasis", 11, 8),
-        (12, "머리말", "Header", int(HEADER_PARA_ID), int(HEADER_CHAR_ID)),
-        (13, "꼬리말", "Footer", int(FOOTER_PARA_ID), int(FOOTER_CHAR_ID)),
-        (14, "표제목", "TableTitle", int(TABLE_TITLE_PARA_ID), 7),
-        (15, "표헤더", "TableHeader", int(TABLE_HEADER_PARA_ID), int(TABLE_HEADER_CHAR_ID)),
-        (16, "표본문", "TableBody", int(TABLE_BODY_PARA_ID), int(TABLE_BODY_CHAR_ID)),
-        (17, "요약본문", "SummaryBody", int(SUMMARY_BODY_PARA_ID), 7),
-        (18, "요약설명", "SummaryDesc", int(SUMMARY_DESC_PARA_ID), int(TABLE_BODY_CHAR_ID)),
-    ]
-    for sid, name, eng, para_ref, char_ref in style_defs:
-        add_style(sid, name, eng, para_ref, char_ref)
-    styles.set("itemCnt", str(len(style_defs)))
+    # YAML에서 styles 로드 (style_id 순서대로)
+    style_list = sorted(CONFIG.styles.values(), key=lambda s: s.style_id)
+    for style_def in style_list:
+        add_style(
+            style_def.style_id,
+            style_def.name_ko,
+            style_def.name_en,
+            style_def.para_pr_id,
+            style_def.char_pr_id,
+        )
+    styles.set("itemCnt", str(len(style_list)))
 
     # compatibility / options (한글 구현 관행에 맞춤)
     compatible = ET.SubElement(head, _q("hh", "compatibleDocument"), {"targetProgram": "HWP201X"})
@@ -2392,26 +2392,28 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
             continue
 
         # 1) 필요하면 spacer 문단 추가
-        spacer_char_id = SPACER_CHAR_MAP.get(block.type)
-        if spacer_char_id is not None:
-            spacer_marker = SPACER_MARKER_MAP.get(block.type, "↕↕")
-            p = ET.SubElement(
-                root,
-                _q("hp", "p"),
-                {
-                    "id": str(p_id),
-                    "paraPrIDRef": "0",
-                    "styleIDRef": "0",
-                    "pageBreak": "0",
-                    "columnBreak": "0",
-                    "merged": "0",
-                },
-            )
-            # spacer에는 secPr를 붙이지 않는다
-            run_sp = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": spacer_char_id})
-            t_sp = ET.SubElement(run_sp, _q("hp", "t"))
-            t_sp.text = spacer_marker
-            p_id += 1
+        # 1) 필요하면 spacer 문단 추가 (use_line_spacers가 true일 때만)
+        if CONFIG.document_mode.use_line_spacers:
+            spacer_char_id = SPACER_CHAR_MAP.get(block.type)
+            if spacer_char_id is not None:
+                spacer_marker = SPACER_MARKER_MAP.get(block.type, "↕↕")
+                p = ET.SubElement(
+                    root,
+                    _q("hp", "p"),
+                    {
+                        "id": str(p_id),
+                        "paraPrIDRef": "0",
+                        "styleIDRef": "0",
+                        "pageBreak": "0",
+                        "columnBreak": "0",
+                        "merged": "0",
+                    },
+                )
+                # spacer에는 secPr를 붙이지 않는다
+                run_sp = ET.SubElement(p, _q("hp", "run"), {"charPrIDRef": spacer_char_id})
+                t_sp = ET.SubElement(run_sp, _q("hp", "t"))
+                t_sp.text = spacer_marker
+                p_id += 1
 
         if block.type == BlockType.TITLE:
             p_id, table_id, secpr_attached = _append_title_table(

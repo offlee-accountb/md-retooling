@@ -10,6 +10,19 @@ template_id: "default"
 description: "기본 공문서 스타일 (Phase 1.5)"
 
 # =============================================================================
+# 문서 모드 설정
+# =============================================================================
+# style_mode:
+#   - "stylebook": BlockType별 전용 스타일 사용 (주제목, 본문, 설명2 등)
+#   - "normal": 모든 텍스트가 "바탕글" 스타일 사용 (charPr/paraPr로만 서식 구분)
+# use_line_spacers:
+#   - true: 블록 사이에 줄바꿈 스페이서 삽입
+#   - false: 스페이서 없음 (문단 간격으로만 제어)
+document_mode:
+  style_mode: "stylebook"
+  use_line_spacers: true
+
+# =============================================================================
 # 단위 변환 상수
 # =============================================================================
 units:
@@ -362,6 +375,78 @@ styles:
     char_pr_id: 10
     name_ko: "꼬리말"
     name_en: "Footer"
+
+  # === 예비 스타일 ===
+  reserve_heading:
+    style_id: 7
+    para_pr_id: 7
+    char_pr_id: 5
+    name_ko: "예비제목"
+    name_en: "ReserveHeading"
+
+  reserve_body_a:
+    style_id: 8
+    para_pr_id: 8
+    char_pr_id: 0
+    name_ko: "예비본문A"
+    name_en: "ReserveBodyA"
+
+  reserve_body_b:
+    style_id: 9
+    para_pr_id: 9
+    char_pr_id: 7
+    name_ko: "예비본문B"
+    name_en: "ReserveBodyB"
+
+  reserve_caption:
+    style_id: 10
+    para_pr_id: 10
+    char_pr_id: 7
+    name_ko: "예비캡션"
+    name_en: "ReserveCaption"
+
+  reserve_emphasis:
+    style_id: 11
+    para_pr_id: 11
+    char_pr_id: 8
+    name_ko: "예비강조"
+    name_en: "ReserveEmphasis"
+
+  # === 표 스타일 ===
+  table_title:
+    style_id: 14
+    para_pr_id: 14
+    char_pr_id: 7
+    name_ko: "표제목"
+    name_en: "TableTitle"
+
+  table_header:
+    style_id: 15
+    para_pr_id: 15
+    char_pr_id: 12
+    name_ko: "표헤더"
+    name_en: "TableHeader"
+
+  table_body:
+    style_id: 16
+    para_pr_id: 16
+    char_pr_id: 11
+    name_ko: "표본문"
+    name_en: "TableBody"
+
+  summary_body:
+    style_id: 17
+    para_pr_id: 18
+    char_pr_id: 7
+    name_ko: "요약본문"
+    name_en: "SummaryBody"
+
+  summary_desc:
+    style_id: 18
+    para_pr_id: 19
+    char_pr_id: 11
+    name_ko: "요약설명"
+    name_en: "SummaryDesc"
 
 # =============================================================================
 # Spacer 매핑 (블록 타입 앞 줄간격용)
