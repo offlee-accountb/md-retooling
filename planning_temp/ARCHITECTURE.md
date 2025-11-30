@@ -103,9 +103,9 @@ python tools/spec_search.py "줄간격 line-spacing"
    - 텍스트 → MD 자동 생성
    - 수동 입력과 선택 가능
 
-### Phase 2.5: Smart Injector - 스마트 템플릿 주입 시스템 (✅ MVP 완료)
+### Phase 2.5: 템플릿 주입 시스템 (진행중)
 
-**목표:** 기존 HWPX 템플릿에 데이터를 자동 주입하여 문서 생성 자동화 (90% 자동 인식)
+**목표:** 기존 HWPX 템플릿에 데이터를 주입하여 문서 생성 자동화
 
 #### 전제조건: HWP → HWPX 변환
 
@@ -114,89 +114,74 @@ python tools/spec_search.py "줄간격 line-spacing"
 | 자동 변환 도구 (pyhwpx 등) | ❌ 불채택 | 60% 성공률, 파일 손상 리스크 |
 | **사용자 직접 변환** | ✅ 채택 | 한컴 "다른 이름으로 저장 → HWPX" 100% 정합성 |
 
-#### Smart Injector v3 - 통합 CLI
-
-```bash
-# 1. HWPX 분석 → 프롬프트 + 빈 템플릿 생성
-python smart_injector.py analyze input.hwpx -o prefix
-# → prefix_fields.yaml (빈 템플릿)
-# → prefix_prompt.md (질문 프롬프트)
-
-# 2. 사용자 응답 → YAML 변환
-python smart_injector.py parse response.txt -o fields.yaml
-
-# 3. 주입 실행
-python smart_injector.py inject input.hwpx fields.yaml -o output.hwpx
-
-# 4. 전체 파이프라인 (한번에)
-python smart_injector.py full input.hwpx --response response.txt -o output.hwpx
-```
+> 💡 매출 5천만원 달성 전까지는 고객에게 HWPX 변환 책임을 넘기는 것이 현실적
 
 #### 파이프라인 개요
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  HWPX 원본 템플릿                                            │
-└─────────────────┬───────────────────────────────────────────┘
-                  │ analyze
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│  prefix_prompt.md    (LLM/사용자에게 질문)                    │
-│  prefix_fields.yaml  (빈 입력 템플릿)                         │
-└─────────────────┬───────────────────────────────────────────┘
-                  │ 사용자/LLM 응답
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│  response.txt (라벨: 값 형식)                                 │
-└─────────────────┬───────────────────────────────────────────┘
-                  │ parse → inject (또는 full)
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│  output.hwpx (완성된 문서)                                    │
-└─────────────────────────────────────────────────────────────┘
+[사용자 제공]
+     │
+     ▼
+[HWPX 템플릿] ──→ [템플릿 태깅] ──→ [{{KEY}} 플레이스홀더 삽입]
+                       │
+                       ▼
+              [LLM 데이터 생성] ──→ generated_data.json
+                       │
+                       ▼
+              [Injector 주입] ──→ [완성된 HWPX]
 ```
 
-#### 자동 인식 규칙 (2단계 규칙 시스템)
+#### 구현 상태
 
-**1단계 - 자동 감지:**
-| 패턴 | 모드 | 설명 |
-|------|------|------|
-| `[라벨] \| [빈셀]` | NEXT_CELL | 다음 셀에 값 주입 |
-| `[라벨:값]` | APPEND | 콜론 뒤에 값 붙이기 |
-| `[라벨] \| [:] \| [빈셀]` | SKIP_COLON | 콜론 건너뛰고 2칸 뒤에 주입 |
-| `[___ 라벨]` | PREPEND | 라벨 앞 밑줄에 값 주입 |
+| 단계 | 설명 | 상태 | 위치 |
+|------|------|------|------|
+| 템플릿 준비 | 사용자가 HWPX로 저장 | ✅ 사용자 책임 | - |
+| 템플릿 태깅 | `{{KEY}}` 플레이스홀더 삽입 | 📝 수동/반자동 | `input/hwpx_templates/` |
+| 데이터 생성 | LLM이 schema.json 기반 데이터 생성 | 📝 설계중 | 외부 LLM |
+| **주입 (Inject)** | 플레이스홀더 치환 & 재패키징 | ✅ POC 완료 | `injector/exp_inject.py` |
 
-**2단계 - 명시적 지정:**
-YAML에서 `mode: next_cell|append|replace|prepend|skip_colon` 명시
+#### 핵심 설계 결정
 
-#### 추가 자동 기능
-
-| 기능 | 설명 |
-|------|------|
-| 라벨 정규화 | "기  업  명" → "기업명", 공백 무시 |
-| 라벨 별칭 DB | "기업체명" = "회사명" = "상호" |
-| 날짜 자동 주입 | "2025년 월 일" → 현재 날짜 |
-| 분리 날짜 주입 | `[년]\|[월]\|[일]` → 각 셀에 분리 주입 |
-| 서명란 주입 | "신청자 : ㅇㅇㅇ (인)" → 값 자동 삽입 |
+1. **플레이스홀더 방식**: `{{KEY}}` 패턴으로 결정적(deterministic) 치환
+2. **리스트 확장**: `{{ITEMS}}` → 여러 `<hp:p>` 문단으로 자동 확장
+3. **표 주입**: `{{TABLE_DATA}}` → `<hp:tbl>` 구조로 렌더링 (개발 예정)
+4. **HWPX 무결성**: mimetype 저장 방식, ID 연속성 등 Phase 1 규칙 준수
 
 #### 폴더 구조
 
 ```
 injector/
-├── smart_injector.py  # 통합 CLI (analyze/parse/inject/full)
-├── field_extractor.py # (deprecated, smart_injector에 통합)
-└── templates/
-    ├── input_template.yaml
-    └── data_collection_prompt.yaml
+├── exp_inject.py      # POC: 플레이스홀더 치환 스크립트
+└── README.md          # 사용법 가이드
+
+input/
+├── md/                # 입력 마크다운 파일
+├── hwpx_templates/    # HWPX 템플릿 ({{KEY}} 플레이스홀더 포함)
+└── reference/         # 샘플 데이터 (sample_data.json)
 ```
 
-#### 테스트 결과 (1-5 문서 기준)
+#### 사용 예시
 
-| 섹션 | 주입 결과 |
-|------|----------|
-| Section0 (1-6p) | 19개 필드 ✅ |
-| Section1 (11p) | 6개 필드 ✅ |
-| **총계** | **25개 필드** |
+```bash
+# 1. 템플릿 준비 (사용자가 한글에서 HWPX로 저장)
+# 2. 템플릿에 {{TITLE}}, {{NAME}} 등 플레이스홀더 삽입
+
+# 3. 주입 실행
+python injector/exp_inject.py \
+  --template input/hwpx_templates/template.hwpx \
+  --data input/reference/sample_data.json \
+  --output output/injected.hwpx
+```
+
+#### sample_data.json 예시
+
+```json
+{
+  "TITLE": "보고서 제목",
+  "NAME": "홍길동",
+  "ITEMS": ["항목 1", "항목 2", "항목 3"]
+}
+```
 
 ---
 

@@ -1,0 +1,28 @@
+version: '3.8'
+
+# 개발용 docker-compose (핫 리로드 지원)
+
+services:
+  auth-backend:
+    build: .
+    container_name: md-retooling-auth-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET_KEY=dev-secret-key-for-testing-only
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - REFRESH_TOKEN_EXPIRE_DAYS=30
+      - DATABASE_URL=sqlite+aiosqlite:///./data/auth.db
+      - DEBUG=true
+    volumes:
+      # 소스 코드 마운트 (핫 리로드용)
+      - .:/app
+      # DB 데이터 영속화
+      - auth-data-dev:/app/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+volumes:
+  auth-data-dev:
+    driver: local

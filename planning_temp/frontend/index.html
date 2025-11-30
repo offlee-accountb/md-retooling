@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MD Retooling</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="login-page" class="page active">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="48" height="48" rx="12" fill="#fff"/>
+                            <path d="M14 18L24 12L34 18V30L24 36L14 30V18Z" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M24 24L24 36" stroke="#000" stroke-width="2.5" stroke-linecap="round"/>
+                            <path d="M14 18L24 24L34 18" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <h1 class="logo-title">Welcome back</h1>
+                    <p class="logo-subtitle">Enter your credentials to access the workspace.</p>
+                </div>
+
+                <form id="login-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="login-email">Email Address</label>
+                        <input type="email" id="login-email" name="email" placeholder="name@company.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" name="password" placeholder="••••••••" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-text">Sign In</span>
+                        <span class="btn-loader"></span>
+                    </button>
+
+                    <div class="divider"><span>OR</span></div>
+
+                    <button type="button" class="btn btn-secondary" id="goto-register">
+                        Create an account
+                    </button>
+                </form>
+                <div id="login-error" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Page -->
+    <div id="register-page" class="page">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="logo-section">
+                    <h1 class="logo-title">Create Account</h1>
+                    <p class="logo-subtitle">Start automating your documents today.</p>
+                </div>
+
+                <form id="register-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="register-name">Full Name</label>
+                        <input type="text" id="register-name" name="name" placeholder="John Doe" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="register-email">Email Address</label>
+                        <input type="email" id="register-email" name="email" placeholder="name@company.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="register-password">Password</label>
+                        <input type="password" id="register-password" name="password" placeholder="Min. 8 characters" required minlength="8">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="register-password-confirm">Confirm Password</label>
+                        <input type="password" id="register-password-confirm" name="password-confirm" placeholder="Re-enter password" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-text">Create Account</span>
+                        <span class="btn-loader"></span>
+                    </button>
+
+                    <div class="divider"><span>ALREADY HAVE AN ACCOUNT?</span></div>
+
+                    <button type="button" class="btn btn-secondary" id="goto-login">
+                        Sign In
+                    </button>
+                </form>
+                <div id="register-error" class="error-message"></div>
+                <div id="register-success" class="success-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Page -->
+    <div id="dashboard-page" class="page">
+        <div class="dashboard-container">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo-icon">
+                        <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="48" height="48" rx="12" fill="#fff"/>
+                            <path d="M14 18L24 12L34 18V30L24 36L14 30V18Z" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="sidebar-title">MD Retooling</span>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                        <span class="nav-text">Overview</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <span class="nav-text">Documents</span>
+                        <span class="badge">Beta</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M2 15h10"></path><path d="M9 18l3-3-3-3"></path></svg>
+                        <span class="nav-text">Templates</span>
+                    </a>
+                    <a href="#" class="nav-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        <span class="nav-text">Settings</span>
+                    </a>
+                </nav>
+
+                <div class="sidebar-footer">
+                    <div class="user-avatar" id="user-avatar">
+                        <span id="user-initials"></span>
+                    </div>
+                    <div class="user-details">
+                        <div class="user-name" id="user-name">Loading...</div>
+                        <div class="user-email" id="user-email"></div>
+                    </div>
+                    <button class="btn-logout" id="logout-btn" title="Log out">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
+                </div>
+            </aside>
+
+            <main class="dashboard-main">
+                <header class="dashboard-header">
+                    <div>
+                        <h1 class="page-title">Overview</h1>
+                        <p class="page-subtitle">Monitor your document processing pipeline.</p>
+                    </div>
+                    <button class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        New Project
+                    </button>
+                </header>
+
+                <div class="bento-grid">
+                    <!-- Stat 1 -->
+                    <div class="card stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Total Documents</span>
+                            <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        </div>
+                        <div class="stat-value">1,248</div>
+                        <svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
+                            <path d="M0,30 L10,25 L20,28 L30,15 L40,20 L50,10 L60,18 L70,5 L80,12 L90,8 L100,20 V30 H0 Z" fill="url(#gradient-blue)" />
+                            <defs>
+                                <linearGradient id="gradient-blue" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.5"/>
+                                    <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <!-- Stat 2 -->
+                    <div class="card stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Success Rate</span>
+                            <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        </div>
+                        <div class="stat-value">98.5%</div>
+                        <svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
+                            <path d="M0,30 L10,28 L20,29 L30,25 L40,26 L50,24 L60,25 L70,20 L80,22 L90,15 L100,10 V30 H0 Z" fill="url(#gradient-green)" />
+                            <defs>
+                                <linearGradient id="gradient-green" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#10B981" stop-opacity="0.5"/>
+                                    <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <!-- Stat 3 -->
+                    <div class="card stat-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Processing Time</span>
+                            <svg class="stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </div>
+                        <div class="stat-value">1.2s</div>
+                        <svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
+                            <path d="M0,30 L10,20 L20,25 L30,15 L40,18 L50,12 L60,15 L70,10 L80,12 L90,5 L100,8 V30 H0 Z" fill="url(#gradient-purple)" />
+                            <defs>
+                                <linearGradient id="gradient-purple" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.5"/>
+                                    <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <!-- System Status (Large) -->
+                    <div class="card feature-card">
+                        <h2>System Status</h2>
+                        <p>All systems are operational. The conversion engine is ready for high-volume processing.</p>
+                        
+                        <div class="status-list">
+                            <div class="status-item">
+                                <div class="status-dot dot-green"></div>
+                                <div class="status-text">
+                                    <h4>Auth Service</h4>
+                                    <span>Operational</span>
+                                </div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-dot dot-yellow"></div>
+                                <div class="status-text">
+                                    <h4>Converter Engine</h4>
+                                    <span>Initializing</span>
+                                </div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-dot dot-blue"></div>
+                                <div class="status-text">
+                                    <h4>API Gateway</h4>
+                                    <span>Active</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity (Tall) -->
+                    <div class="card activity-card">
+                        <div class="stat-header">
+                            <span class="stat-label">Recent Activity</span>
+                        </div>
+                        <div class="activity-list">
+                            <div class="activity-item">
+                                <div class="activity-icon">🚀</div>
+                                <div class="activity-content">
+                                    <h4>System Started</h4>
+                                    <p>Just now</p>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon">👤</div>
+                                <div class="activity-content">
+                                    <h4>User Login</h4>
+                                    <p>2 mins ago</p>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon">📝</div>
+                                <div class="activity-content">
+                                    <h4>Template Updated</h4>
+                                    <p>1 hour ago</p>
+                                </div>
+                            </div>
+                             <div class="activity-item">
+                                <div class="activity-icon">🔧</div>
+                                <div class="activity-content">
+                                    <h4>Maintenance</h4>
+                                    <p>Yesterday</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

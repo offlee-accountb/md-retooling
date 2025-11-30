@@ -112,16 +112,18 @@ phase<N>/<작업>   # Phase별 작업
 ### 디렉토리 규칙
 ```
 document-automation/
-├── tools/              # Phase 0
-├── converter/          # Phase 1
-├── validator/          # Phase 1
-├── template_automation/# Phase 2.5
+├── tools/              # Phase 0 - 유틸리티
+├── converter/          # Phase 1 - MD→HWPX 변환
+├── validator/          # Phase 1 - 검증 도구
+├── injector/           # Phase 2.5 - 스마트 템플릿 주입
+│   ├── smart_injector.py  # 통합 CLI
+│   └── templates/         # YAML 템플릿
 ├── docs/               # 모든 문서
 │   ├── ARCHITECTURE.md
-│   ├── RECENT_CHANGES.md
-│   ├── FULL_CHANGELOG.md
+│   ├── CURRENT_ISSUES.md
 │   ├── AI_COLLABORATION_GUIDE.md
 │   └── hwpx_spec.md
+├── templates/          # 공용 템플릿 (core_styles.yaml 등)
 └── tests/
     ├── unit/           # 단위 테스트 코드
     ├── integration/    # 통합 테스트
@@ -234,4 +236,5 @@ def function_name(arg1: str, arg2: int = 0) -> str:
 
 ---
 
-**2024-11-12 초안 작성 (Claude)**
+**2024-11-12 초안 작성 (Claude)**  
+**2025-11-30 디렉토리 구조 업데이트 - injector 폴더 추가 (GitHub Copilot)**

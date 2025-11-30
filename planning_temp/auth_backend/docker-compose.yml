@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # 인증 백엔드 서비스
+  auth-backend:
+    build: .
+    container_name: md-retooling-auth
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-super-secret-key-change-this}
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      - DATABASE_URL=sqlite+aiosqlite:///./data/auth.db
+      - DEBUG=false
+    volumes:
+      # DB 데이터 영속화
+      - auth-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  auth-data:
+    driver: local
