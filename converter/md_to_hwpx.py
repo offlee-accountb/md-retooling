@@ -2659,7 +2659,7 @@ def build_header_xml() -> bytes:
         (2, "소제목", "SubTitle", 2, 6),
         (3, "본문", "Body", 9, 0),
         (4, "설명2", "Desc2", 8, 0),
-        (5, "설명3", "Desc3", 10, 7),
+        (5, "설명3", "Desc3", 10, 0),   # style charPr=0(휴먼) 통일, run charPr=7(맑은고딕) 유지 — 문단 합침 시 폰트 보존
         (6, "강조", "Emphasis", 6, 8),
         (7, "예비제목", "ReserveHeading", 7, 5),
         (8, "예비본문A", "ReserveBodyA", 8, 0),

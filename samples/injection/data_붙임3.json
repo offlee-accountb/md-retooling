@@ -1,0 +1,18 @@
+{
+    "description": "붙임3 - 공급기업 역량진단 정보 제공 동의서 (완전판)",
+    "injections": [
+        {"type": "t_element", "table_idx": 1, "row_idx": 0, "cell_idx": 0,
+         "t_idx": 1, "value": " 중소기업기술정보진흥원"},
+
+        {"type": "text_replace", "table_idx": 1, "row_idx": 1, "cell_idx": 0,
+         "find": "20   .   .   .자",
+         "replace": "2025. 6. 15.자"},
+
+        {"type": "cell", "table_idx": 9, "row_idx": 0, "cell_idx": 7, "value": "(주)스마트테크솔루션"},
+        {"type": "cell", "table_idx": 9, "row_idx": 1, "cell_idx": 5, "value": "123-45-67890"},
+        {"type": "cell", "table_idx": 9, "row_idx": 2, "cell_idx": 2, "value": "김진우 (법인 서명)"},
+        {"type": "cell", "table_idx": 9, "row_idx": 5, "cell_idx": 2, "value": "031-123-4567"},
+
+        {"type": "cell", "table_idx": 9, "row_idx": 4, "cell_idx": 3, "value": "김진우 (개인 서명)"}
+    ]
+}

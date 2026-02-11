@@ -1,0 +1,29 @@
+{
+    "description": "붙임1 - 스마트공장 공급기업 역량진단 지원사업 신청서 (완전판)",
+    "injections": [
+        {"type": "cell", "table_idx": 1, "row_idx": 0, "cell_idx": 1, "value": "(주)스마트테크솔루션"},
+        {"type": "cell", "table_idx": 1, "row_idx": 0, "cell_idx": 3, "value": "김진우"},
+        {"type": "cell", "table_idx": 1, "row_idx": 1, "cell_idx": 1, "value": "2018.03.15"},
+        {"type": "cell", "table_idx": 1, "row_idx": 1, "cell_idx": 3, "value": "123-45-67890"},
+        {"type": "cell", "table_idx": 1, "row_idx": 2, "cell_idx": 1, "value": "경기도 성남시 분당구 판교로 256, 판교디지털센터 7층"},
+        {"type": "cell", "table_idx": 1, "row_idx": 3, "cell_idx": 2, "value": "기술개발팀"},
+        {"type": "cell", "table_idx": 1, "row_idx": 3, "cell_idx": 4, "value": "010-1234-5678"},
+        {"type": "cell", "table_idx": 1, "row_idx": 4, "cell_idx": 1, "value": "팀장"},
+        {"type": "cell", "table_idx": 1, "row_idx": 4, "cell_idx": 3, "value": "031-123-4567"},
+        {"type": "cell", "table_idx": 1, "row_idx": 5, "cell_idx": 1, "value": "이서연"},
+        {"type": "cell", "table_idx": 1, "row_idx": 5, "cell_idx": 3, "value": "sy.lee@smarttech.co.kr"},
+        {"type": "checkbox", "table_idx": 2, "row_idx": 0, "cell_idx": 1, "checked": true},
+
+        {"type": "text_replace", "table_idx": 2, "row_idx": 3, "cell_idx": 0,
+         "find": "2025년   월   일",
+         "replace": "2025년 6월 15일"},
+
+        {"type": "text_replace", "table_idx": 2, "row_idx": 3, "cell_idx": 0,
+         "find": "신청기업명 : ",
+         "replace": "신청기업명 : (주)스마트테크솔루션"},
+
+        {"type": "text_replace", "table_idx": 2, "row_idx": 3, "cell_idx": 0,
+         "find": "신  청  자 :             (인)",
+         "replace": "신  청  자 : 김진우       (인)"}
+    ]
+}

@@ -1,0 +1,16 @@
+{
+    "description": "붙임2 - 중소기업 지원사업 통합관리시스템 정보 활용 동의서 (완전판)",
+    "injections": [
+        {"type": "text_replace", "table_idx": 0, "row_idx": 0, "cell_idx": 0,
+         "find": "20  년   월   일",
+         "replace": "2025년 6월 15일"},
+
+        {"type": "text_replace", "table_idx": 0, "row_idx": 0, "cell_idx": 0,
+         "find": "기업명 :     ㅇㅇㅇ  (인)",
+         "replace": "기업명 : (주)스마트테크솔루션  (인)"},
+
+        {"type": "text_replace", "table_idx": 0, "row_idx": 0, "cell_idx": 0,
+         "find": "대표자 :     ㅇㅇㅇ  (인)",
+         "replace": "대표자 : 김진우  (인)"}
+    ]
+}
