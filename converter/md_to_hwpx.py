@@ -62,6 +62,7 @@ class BlockType(Enum):
     TABLE = auto()       # markdown table
     SUMMARY_TABLE = auto()  # <요약표> 전용
     PROCESS = auto()     # <프로세스> 흐름도
+    DIAGRAM = auto()     # <도식도> 레이어 스택
     PLAIN = auto()       # fallback / other
 
 
@@ -99,6 +100,25 @@ class ProcessBlock(Block):
     proc_title: str
     proc_rows: List[tuple]  # [(steps, reversed), ...]
     # steps = [(name, desc), ...]
+
+
+@dataclass
+class DiagramBox:
+    """도식도 안의 개별 박스."""
+    title: str            # Bold 제목
+    items: List[str]      # 내용 항목들 (· xxx)
+
+
+@dataclass
+class DiagramBlock(Block):
+    """도식도 (<도식도> 태그).
+    
+    layers: 각 레이어는 DiagramBox 리스트.
+    connectors: 레이어 간 연결 ('↓' 또는 '↔').
+    """
+    diagram_title: str
+    layers: List[List]       # [layer1_boxes, layer2_boxes, ...]
+    connectors: List[str]    # ['↓', '↔', ...] (len = len(layers) - 1)
 
 
 @dataclass
@@ -745,6 +765,64 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         )
         return block, j
 
+    def _parse_diagram_block(idx: int, line_list: List[str]) -> tuple:
+        """<도식도: 제목> ~ </도식도> 블록을 파싱한다."""
+        diag_match = re.match(r"^<\s*도식도\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not diag_match:
+            return None, idx
+        diag_title = diag_match.group(1).strip()
+        j = idx + 1
+        layers = []       # [[DiagramBox, ...], ...]
+        connectors = []   # ['↓', '↔', ...]
+        current_layer = []
+
+        def _flush_layer():
+            nonlocal current_layer
+            if current_layer:
+                layers.append(current_layer)
+                current_layer = []
+
+        while j < len(line_list):
+            ln = line_list[j].strip()
+            if ln.replace(" ", "") in ("</도식도>", "</도식도>"):
+                j += 1
+                break
+            if not ln:
+                # 빈 줄 = 레이어 구분
+                _flush_layer()
+                j += 1
+                continue
+            if ln in ("↓", "↔"):
+                _flush_layer()
+                connectors.append(ln)
+                j += 1
+                continue
+
+            # [제목 | 내용1 | 내용2] 형식 파싱
+            box_match = re.match(r"^\[(.+)\]\s*$", ln)
+            if box_match:
+                content = box_match.group(1)
+                parts = [p.strip() for p in content.split("|")]
+                box_title = parts[0]
+                box_items = parts[1:] if len(parts) > 1 else []
+                current_layer.append(DiagramBox(title=box_title, items=box_items))
+            j += 1
+
+        _flush_layer()
+
+        if not layers:
+            return None, idx
+
+        block = DiagramBlock(
+            type=BlockType.DIAGRAM,
+            raw="\n".join(line_list[idx:j]),
+            text=diag_title,
+            diagram_title=diag_title,
+            layers=layers,
+            connectors=connectors,
+        )
+        return block, j
+
     blocks: List[Block] = []
     line_list = [_normalize_line(ln) for ln in lines]
     i = 0
@@ -752,6 +830,13 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         line = line_list[i]
         stripped = line.lstrip(" ")
         leading_spaces = len(line) - len(stripped)
+
+        # 도식도
+        diagram_block, next_idx = _parse_diagram_block(i, line_list)
+        if diagram_block is not None:
+            blocks.append(diagram_block)
+            i = next_idx
+            continue
 
         # 프로세스 흐름도
         process_block, next_idx = _parse_process_block(i, line_list)
@@ -882,7 +967,7 @@ def _strip_bold_markup(text: str) -> str:
 def _format_block_preview_text(block: Block) -> Optional[str]:
     if not block.text:
         return None
-    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.PROCESS):
+    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.PROCESS, BlockType.DIAGRAM):
         return None
     if block.type == BlockType.TITLE:
         return None
@@ -2485,6 +2570,305 @@ def _append_process_table(
     p_id = p_counter
     return p_id, table_id + 1, secpr_attached
 
+
+def _append_diagram_table(
+    parent: ET.Element, block, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    """도식도를 레이어 스택 모델로 렌더링한다.
+
+    각 레이어 = 테이블 행 (박스 셀들)
+    레이어 사이 = 화살표 행 (↓ 또는 ↔)
+    """
+    if not block.layers:
+        return p_id, table_id, secpr_attached
+
+    # 제목 표기
+    p_title = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": TABLE_TITLE_PARA_ID,
+            "styleIDRef": TABLE_TITLE_STYLE_ID,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_title, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+    title_run = ET.SubElement(p_title, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+    title_t = ET.SubElement(title_run, _q("hp", "t"))
+    title_t.text = f"< {block.diagram_title} >"
+    p_id += 1
+
+    # 최대 열 수 결정 (가장 많은 박스를 가진 레이어 기준)
+    max_boxes = max(len(layer) for layer in block.layers)
+    # 열 구성: [박스1, 여백, 박스2, 여백, ..., 박스N]
+    # 여백 열은 박스 사이 간격 (화살표 없음)
+    col_cnt = max_boxes * 2 - 1 if max_boxes > 1 else 1
+
+    total_width = int(TABLE_WIDTH_HWP)
+    gap_col_width = 800  # 박스 간 간격 (~2.7mm)
+    n_gap_cols = max_boxes - 1 if max_boxes > 1 else 0
+    remaining = total_width - (n_gap_cols * gap_col_width)
+    box_col_width = remaining // max_boxes if max_boxes > 0 else total_width
+
+    col_widths = []
+    for c in range(col_cnt):
+        if c % 2 == 0:
+            col_widths.append(box_col_width)
+        else:
+            col_widths.append(gap_col_width)
+    # 보정
+    used = sum(col_widths)
+    if used != total_width and col_widths:
+        col_widths[-1] += (total_width - used)
+
+    # 행 수 계산
+    row_count = len(block.layers) * 2 - 1  # 레이어행 + 화살표행
+    box_row_height = 3200   # 박스 행 높이
+    arrow_row_height = 1200  # 화살표 행 높이
+
+    total_h = 0
+    for ri in range(row_count):
+        total_h += box_row_height if ri % 2 == 0 else arrow_row_height
+
+    # 표 wrapper
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "0",
+            "rowCnt": str(row_count),
+            "colCnt": str(col_cnt),
+            "cellSpacing": "0",
+            "borderFillIDRef": "1",
+            "noAdjust": "0",
+        },
+    )
+
+    ET.SubElement(tbl, _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE",
+         "height": str(total_h), "heightRelTo": "ABSOLUTE", "protect": "0"})
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "283", "right": "283", "top": "141", "bottom": "141"})
+
+    p_counter = p_id
+
+    def _add_diagram_cell(tr_el, col_idx, row_idx_val, width, height, *,
+                          box=None, arrow_text=""):
+        """도식도 셀 하나를 추가한다."""
+        nonlocal p_counter
+        is_box = box is not None
+        border_ref = PROCESS_STEP_BORDER_ID if is_box else PROCESS_ARROW_BORDER_ID
+        tc = ET.SubElement(tr_el, _q("hp", "tc"),
+            {"name": "", "header": "0", "hasMargin": "0", "protect": "0",
+             "editable": "0", "dirty": "0", "borderFillIDRef": border_ref})
+        sub_list = ET.SubElement(tc, _q("hp", "subList"),
+            {"id": "", "textDirection": "HORIZONTAL", "lineWrap": "BREAK",
+             "vertAlign": "CENTER", "linkListIDRef": "0", "linkListNextIDRef": "0",
+             "textWidth": "0", "textHeight": "0", "hasTextRef": "0", "hasNumRef": "0"})
+
+        if is_box:
+            # 제목 줄 (Bold)
+            p1 = ET.SubElement(sub_list, _q("hp", "p"),
+                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                 "columnBreak": "0", "merged": "0"})
+            run1 = ET.SubElement(p1, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+            t1 = ET.SubElement(run1, _q("hp", "t"))
+            t1.text = box.title
+            p_counter += 1
+
+            # 내용 항목들 (일반체)
+            for item in box.items:
+                p_item = ET.SubElement(sub_list, _q("hp", "p"),
+                    {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                     "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                     "columnBreak": "0", "merged": "0"})
+                run_item = ET.SubElement(p_item, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
+                t_item = ET.SubElement(run_item, _q("hp", "t"))
+                t_item.text = item
+                p_counter += 1
+        else:
+            # 화살표 또는 빈 셀
+            p_a = ET.SubElement(sub_list, _q("hp", "p"),
+                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                 "columnBreak": "0", "merged": "0"})
+            if arrow_text:
+                run_a = ET.SubElement(p_a, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
+                t_a = ET.SubElement(run_a, _q("hp", "t"))
+                t_a.text = arrow_text
+            p_counter += 1
+
+        ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx_val)})
+
+        # colspan 계산: 단일 박스 레이어는 전체 병합
+        ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+        ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(width), "height": str(height)})
+        if is_box:
+            ET.SubElement(tc, _q("hp", "cellMargin"),
+                {"left": "170", "right": "170", "top": "113", "bottom": "113"})
+        else:
+            ET.SubElement(tc, _q("hp", "cellMargin"),
+                {"left": "28", "right": "28", "top": "113", "bottom": "113"})
+
+    actual_row = 0
+    for layer_idx, layer in enumerate(block.layers):
+        tr = ET.SubElement(tbl, _q("hp", "tr"))
+        n_boxes = len(layer)
+
+        if n_boxes == 1 and col_cnt > 1:
+            # 단일 박스 → 전체 열을 합쳐서 1개 셀로 (colspan)
+            box = layer[0]
+            border_ref = PROCESS_STEP_BORDER_ID
+            tc = ET.SubElement(tr, _q("hp", "tc"),
+                {"name": "", "header": "0", "hasMargin": "0", "protect": "0",
+                 "editable": "0", "dirty": "0", "borderFillIDRef": border_ref})
+            sub_list = ET.SubElement(tc, _q("hp", "subList"),
+                {"id": "", "textDirection": "HORIZONTAL", "lineWrap": "BREAK",
+                 "vertAlign": "CENTER", "linkListIDRef": "0", "linkListNextIDRef": "0",
+                 "textWidth": "0", "textHeight": "0", "hasTextRef": "0", "hasNumRef": "0"})
+            p1 = ET.SubElement(sub_list, _q("hp", "p"),
+                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                 "columnBreak": "0", "merged": "0"})
+            run1 = ET.SubElement(p1, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+            t1 = ET.SubElement(run1, _q("hp", "t"))
+            t1.text = box.title
+            p_counter += 1
+            for item in box.items:
+                pi = ET.SubElement(sub_list, _q("hp", "p"),
+                    {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                     "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                     "columnBreak": "0", "merged": "0"})
+                ri = ET.SubElement(pi, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
+                ti = ET.SubElement(ri, _q("hp", "t"))
+                ti.text = item
+                p_counter += 1
+
+            ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": str(actual_row)})
+            ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": str(col_cnt), "rowSpan": "1"})
+            ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(total_width), "height": str(box_row_height)})
+            ET.SubElement(tc, _q("hp", "cellMargin"),
+                {"left": "170", "right": "170", "top": "113", "bottom": "113"})
+        else:
+            # 다중 박스 레이어
+            cell_idx = 0
+            for bi, box in enumerate(layer):
+                _add_diagram_cell(tr, cell_idx, actual_row,
+                                  col_widths[cell_idx] if cell_idx < len(col_widths) else col_widths[-1],
+                                  box_row_height,
+                                  box=box)
+                cell_idx += 1
+                # 간격 셀
+                if bi < n_boxes - 1 and cell_idx < col_cnt:
+                    _add_diagram_cell(tr, cell_idx, actual_row,
+                                      col_widths[cell_idx] if cell_idx < len(col_widths) else col_widths[-1],
+                                      box_row_height)
+                    cell_idx += 1
+            # 남은 열 채우기
+            while cell_idx < col_cnt:
+                _add_diagram_cell(tr, cell_idx, actual_row,
+                                  col_widths[cell_idx] if cell_idx < len(col_widths) else col_widths[-1],
+                                  box_row_height)
+                cell_idx += 1
+
+        actual_row += 1
+
+        # 화살표 행 (레이어 사이)
+        if layer_idx < len(block.layers) - 1:
+            tr_arrow = ET.SubElement(tbl, _q("hp", "tr"))
+            connector = block.connectors[layer_idx] if layer_idx < len(block.connectors) else "↓"
+
+            if connector == "↔":
+                # 좌우 비교: 가운데에 ↔ 표시
+                mid = col_cnt // 2
+                for ci in range(col_cnt):
+                    arrow_txt = "↔" if ci == mid else ""
+                    _add_diagram_cell(tr_arrow, ci, actual_row,
+                                      col_widths[ci] if ci < len(col_widths) else col_widths[-1],
+                                      arrow_row_height,
+                                      arrow_text=arrow_txt)
+            else:
+                # ↓ 분기/수렴: 각 박스 위치에 ↓ 배치
+                # 위 레이어 N개 → 아래 M개: 양쪽에 모두 ↓
+                next_layer = block.layers[layer_idx + 1]
+                cur_n = len(layer)
+                next_n = len(next_layer)
+                # 화살표 위치 결정
+                if cur_n == 1 and next_n > 1:
+                    # 분기: 각 박스 위치에 ↓
+                    arrow_cols = set()
+                    for bi in range(next_n):
+                        arrow_cols.add(bi * 2)  # 짝수 열 = 박스 위치
+                elif cur_n > 1 and next_n == 1:
+                    # 수렴: 각 박스 위치에 ↓
+                    arrow_cols = set()
+                    for bi in range(cur_n):
+                        arrow_cols.add(bi * 2)
+                else:
+                    # 1:1 또는 N:N
+                    arrow_cols = set()
+                    for bi in range(max(cur_n, next_n)):
+                        arrow_cols.add(bi * 2)
+
+                for ci in range(col_cnt):
+                    arrow_txt = "↓" if ci in arrow_cols else ""
+                    _add_diagram_cell(tr_arrow, ci, actual_row,
+                                      col_widths[ci] if ci < len(col_widths) else col_widths[-1],
+                                      arrow_row_height,
+                                      arrow_text=arrow_txt)
+
+            actual_row += 1
+
+    p_id = p_counter
+    return p_id, table_id + 1, secpr_attached
+
 def mm_to_hwp(mm: float) -> str:
     """Convert millimeters to Hangul internal HWPUNIT."""
 
@@ -3413,6 +3797,11 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
             continue
         if isinstance(block, ProcessBlock):
             p_id, table_id, secpr_attached = _append_process_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+        if isinstance(block, DiagramBlock):
+            p_id, table_id, secpr_attached = _append_diagram_table(
                 root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
             )
             continue
