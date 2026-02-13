@@ -61,6 +61,7 @@ class BlockType(Enum):
     EMPHASIS = auto()    # <강조>
     TABLE = auto()       # markdown table
     SUMMARY_TABLE = auto()  # <요약표> 전용
+    PROCESS = auto()     # <프로세스> 흐름도
     PLAIN = auto()       # fallback / other
 
 
@@ -86,6 +87,18 @@ class SummaryTableBlock(Block):
     """요약표(<요약표 시작> ~ <요약표 끝>) 범위를 하나의 표로 묶는다."""
 
     items: List[Block]
+
+
+@dataclass
+class ProcessBlock(Block):
+    """프로세스 흐름도 (<프로세스> 태그).
+    
+    rows: 각 행은 (단계명, 담당자) 튜플의 리스트.
+           방향이 역방향(←)이면 reversed=True.
+    """
+    proc_title: str
+    proc_rows: List[tuple]  # [(steps, reversed), ...]
+    # steps = [(name, desc), ...]
 
 
 @dataclass
@@ -168,6 +181,11 @@ TITLE_BODY_HEIGHT_HWP = "3174"  # TODO: move to config
 ONE_PT_HWP = str(int(round((25.4 / 72) * HWPUNITS_PER_MM)))
 TITLE_TABLE_ROW_HEIGHTS = (ONE_PT_HWP, TITLE_BODY_HEIGHT_HWP, ONE_PT_HWP)
 EMPH_TABLE_HEIGHT_HWP = "2632"
+
+# 행 높이 자동 계산 상수
+TABLE_LINE_HEIGHT_HWP = 1500    # 11pt 기준 1줄 높이 (줄간격 포함)
+TABLE_MIN_ROW_HEIGHT_HWP = 1800 # 최소 행 높이 (1줄 + 여백)
+TABLE_ROW_PADDING_HWP = 400     # 셀 상하 여백 (top+bottom)
 EMPH_TABLE_ROW_HEIGHT = "521"
 TITLE_TABLE_SPACER_CHAR_ID = "9"  # 1pt filler
 
@@ -214,6 +232,8 @@ TITLE_TABLE_SPACER_BORDER_ID = "34"   # 연보라 배경 + 테두리 NONE
 TITLE_TABLE_BODY_BORDER_ID = "35"     # 테두리 NONE, 배경 없음
 EMPH_TABLE_BORDER_ID = "36"           # 연두 배경 + SOLID 테두리
 SUMMARY_TABLE_BORDER_ID = "37"        # 점선 테두리
+PROCESS_STEP_BORDER_ID = "3"          # 실선 테두리 (프로세스 단계 셀)
+PROCESS_ARROW_BORDER_ID = "1"         # 테두리 없음 (화살표 셀)
 
 # Spacer paragraph mapping: CONFIG.spacers에서 동적 생성
 def _build_spacer_char_map():
@@ -673,6 +693,58 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         )
         return summ, j
 
+    def _parse_process_block(idx: int, line_list: List[str]) -> tuple:
+        """<프로세스: 제목> ~ </프로세스> 블록을 파싱한다."""
+        proc_match = re.match(r"^<\s*프로세스\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not proc_match:
+            return None, idx
+        proc_title = proc_match.group(1).strip()
+        j = idx + 1
+        proc_rows = []  # [(steps_list, is_reversed), ...]
+        
+        while j < len(line_list):
+            ln = line_list[j].strip()
+            if ln.replace(" ", "") in ("</프로세스>", "</프로세스>"):
+                j += 1
+                break
+            if not ln or ln == "↓":
+                j += 1
+                continue
+            
+            # 방향 결정: ← 가 있으면 역방향
+            is_reversed = "←" in ln
+            
+            # 화살표로 분리
+            if is_reversed:
+                raw_steps = [s.strip() for s in re.split(r"\s*←\s*", ln) if s.strip()]
+            else:
+                raw_steps = [s.strip() for s in re.split(r"\s*→\s*", ln) if s.strip()]
+            
+            steps = []
+            for step in raw_steps:
+                # "단계명(담당자)" 형식 파싱
+                m = re.match(r"^(.+?)\((.+?)\)$", step)
+                if m:
+                    steps.append((m.group(1).strip(), m.group(2).strip()))
+                else:
+                    steps.append((step, ""))
+            
+            if steps:
+                proc_rows.append((steps, is_reversed))
+            j += 1
+        
+        if not proc_rows:
+            return None, idx
+        
+        block = ProcessBlock(
+            type=BlockType.PROCESS,
+            raw="\n".join(line_list[idx:j]),
+            text=proc_title,
+            proc_title=proc_title,
+            proc_rows=proc_rows,
+        )
+        return block, j
+
     blocks: List[Block] = []
     line_list = [_normalize_line(ln) for ln in lines]
     i = 0
@@ -680,6 +752,13 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         line = line_list[i]
         stripped = line.lstrip(" ")
         leading_spaces = len(line) - len(stripped)
+
+        # 프로세스 흐름도
+        process_block, next_idx = _parse_process_block(i, line_list)
+        if process_block is not None:
+            blocks.append(process_block)
+            i = next_idx
+            continue
 
         # 요약표
         summary_block, next_idx = _parse_summary_block(i, line_list)
@@ -803,7 +882,7 @@ def _strip_bold_markup(text: str) -> str:
 def _format_block_preview_text(block: Block) -> Optional[str]:
     if not block.text:
         return None
-    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE):
+    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.PROCESS):
         return None
     if block.type == BlockType.TITLE:
         return None
@@ -1471,6 +1550,238 @@ def _append_emphasis_table(
     return p_id, table_id + 1, secpr_attached
 
 
+# ---------------------------------------------------------------------------
+# 콘텐츠 기반 열 너비 자동 계산 + 텍스트 피팅
+# ---------------------------------------------------------------------------
+
+# 자간/폰트 변형용 charPr ID 매핑
+# (font_size_pt, spacing_pct) → charPr ID
+# 기본: 11=표본문(11pt,0%), 12=표헤더(11pt,Bold,0%)
+# 추가로 header.xml에 등록되는 변형 charPr
+TABLE_FIT_CHAR_IDS: dict[tuple[int, int], str] = {
+    # (font_pt, spacing_%) → charPr ID
+    (11, 0):   "11",   # 기존 표 본문
+    (11, -5):  "14",
+    (11, -10): "15",
+    (11, -15): "16",
+    (11, -20): "17",
+    (10, 0):   "18",
+    (10, -5):  "19",
+    (10, -10): "20",
+    (10, -15): "21",
+    (10, -20): "22",
+}
+# Bold 버전 (헤더용)
+TABLE_FIT_BOLD_CHAR_IDS: dict[tuple[int, int], str] = {
+    (11, 0):   "12",   # 기존 표 헤더
+    (11, -5):  "23",
+    (11, -10): "24",
+    (11, -15): "25",
+    (11, -20): "26",
+    (10, 0):   "27",
+    (10, -5):  "28",
+    (10, -10): "29",
+    (10, -15): "30",
+    (10, -20): "31",
+}
+
+# 피팅 시도 순서: (font_size, spacing) — 자간 먼저 줄이고, 그 다음 폰트 축소
+FIT_CANDIDATES: list[tuple[int, int]] = [
+    (11, 0), (11, -5), (11, -10), (11, -15), (11, -20),
+    (10, 0), (10, -5), (10, -10), (10, -15), (10, -20),
+]
+
+
+def _visual_text_width(text: str) -> float:
+    """텍스트의 시각적 너비를 추정한다.
+
+    한글/CJK 문자는 가중치 2.0, ASCII/영숫자는 1.0으로 계산하여
+    실제 화면에서 차지하는 폭 비율을 근사한다.
+    **bold** 마크업은 제거 후 측정한다.
+    """
+    # bold 마크업 제거
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    width = 0.0
+    for ch in clean:
+        cp = ord(ch)
+        # CJK Unified Ideographs, Hangul Syllables, Fullwidth forms, etc.
+        if (
+            (0xAC00 <= cp <= 0xD7AF)       # 한글 완성형
+            or (0x1100 <= cp <= 0x11FF)     # 한글 자모
+            or (0x3130 <= cp <= 0x318F)     # 한글 호환 자모
+            or (0x4E00 <= cp <= 0x9FFF)     # CJK 한자
+            or (0xFF01 <= cp <= 0xFF60)     # Fullwidth Latin
+            or (0x3000 <= cp <= 0x303F)     # CJK Symbols
+        ):
+            width += 2.0
+        else:
+            width += 1.0
+    return width
+
+
+def _estimate_line_count(
+    text: str,
+    cell_width_hwp: int,
+    font_size_pt: int,
+    spacing_pct: int,
+) -> float:
+    """주어진 셀 폭·폰트·자간에서 텍스트가 차지할 줄 수를 근사한다.
+
+    근사 방법:
+      - 글자 1자의 폭 ≈ font_size(pt) × HWPUNIT_PER_PT
+      - 한글은 정방형(가로=세로), ASCII는 절반
+      - spacing_pct 적용 시 글자 간격이 비례 축소
+      - 셀 여백 (좌510 + 우510 = 1020 HWPUNIT) 차감
+    """
+    HWPUNIT_PER_PT = 100  # charPr height 기준: 1pt = 100 HWPUNIT
+    char_base_width = font_size_pt * HWPUNIT_PER_PT  # 한글 1자 기본 폭
+
+    # 자간 적용: spacing_pct는 글자폭 대비 %로, 음수면 좁아짐
+    # ex) -20% → 각 자간이 0.2 * char_width만큼 줄어듦
+    # 실효 글자폭 = char_width × (1 + spacing_pct/100)
+    spacing_factor = 1.0 + spacing_pct / 100.0
+
+    # 셀 여백 차감
+    usable_width = cell_width_hwp - 1020  # 좌510 + 우510
+    if usable_width <= 0:
+        return 999.0
+
+    # bold 마크업 제거 후 글자별 폭 합산
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    total_text_width = 0.0
+    for ch in clean:
+        cp = ord(ch)
+        if (
+            (0xAC00 <= cp <= 0xD7AF)
+            or (0x1100 <= cp <= 0x11FF)
+            or (0x3130 <= cp <= 0x318F)
+            or (0x4E00 <= cp <= 0x9FFF)
+            or (0xFF01 <= cp <= 0xFF60)
+            or (0x3000 <= cp <= 0x303F)
+        ):
+            total_text_width += char_base_width * spacing_factor
+        else:
+            total_text_width += (char_base_width * 0.5) * spacing_factor
+
+    if total_text_width <= 0:
+        return 0.0
+
+    import math
+    return math.ceil(total_text_width / usable_width)
+
+
+def _fit_cell_text(
+    text: str,
+    cell_width_hwp: int,
+    *,
+    is_header: bool = False,
+) -> tuple[int, int]:
+    """셀 텍스트에 대해 최적 (font_size, spacing) 조합을 결정한다.
+
+    전략:
+      1. 11pt spacing=0으로 시작 → 2줄 이하면 바로 채택
+      2. 3줄 이상이면 spacing을 -5%씩 줄여서 줄 수가 줄어드는 지점 탐색
+      3. -20%까지 해도 개선 안 되면 10pt로 넘어감
+      4. 최소 줄 수를 달성하는 조합을 반환
+
+    Returns:
+        (font_size_pt, spacing_pct) 튜플
+    """
+    if not text or not text.strip():
+        return (11, 0)
+
+    best = (11, 0)
+    best_lines = _estimate_line_count(text, cell_width_hwp, 11, 0)
+
+    # 이미 2줄 이하면 조정 불필요
+    if best_lines <= 2:
+        return best
+
+    for font_pt, spacing in FIT_CANDIDATES[1:]:  # (11,0) 이미 체크함
+        lines = _estimate_line_count(text, cell_width_hwp, font_pt, spacing)
+        if lines < best_lines:
+            best_lines = lines
+            best = (font_pt, spacing)
+        # 2줄 이하 달성하면 즉시 채택
+        if best_lines <= 2:
+            break
+
+    return best
+
+
+def _compute_col_widths(
+    header: List[str],
+    rows: List[List[str]],
+    col_cnt: int,
+    total_width: int,
+    *,
+    min_ratio: float = 0.12,
+) -> List[int]:
+    """헤더 + 본문 콘텐츠를 분석하여 최적 열 너비(HWPUNIT)를 반환한다.
+
+    알고리즘:
+      1. 각 열에 대해 (헤더 + 모든 행)의 최대 시각적 너비를 측정
+      2. 최대 너비 비율에 따라 total_width를 배분
+      3. 각 열은 최소 min_ratio(기본 12%) 이상의 폭을 보장
+      4. 나머지 1 HWPUNIT은 마지막 열에 보정
+
+    Returns:
+        각 열의 너비 리스트 (HWPUNIT, 합계 = total_width)
+    """
+    # 1) 열별 최대 시각적 너비 수집
+    max_widths = [0.0] * col_cnt
+    # 헤더
+    for col_idx in range(col_cnt):
+        if col_idx < len(header):
+            max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(header[col_idx]))
+    # 본문 행
+    for row in rows:
+        for col_idx in range(col_cnt):
+            if col_idx < len(row):
+                max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(row[col_idx]))
+
+    # 2) 모든 열의 너비가 0이면 균등 분할 fallback
+    total_visual = sum(max_widths)
+    if total_visual == 0:
+        base = total_width // col_cnt
+        widths = [base] * col_cnt
+        widths[-1] += total_width - base * col_cnt
+        return widths
+
+    # 3) 최소 비율 적용하여 비율 계산
+    min_width_hwp = int(total_width * min_ratio)
+    ratios = [w / total_visual for w in max_widths]
+
+    # 최소 비율 미달 열에 대해 floor 적용 후 나머지 재배분
+    locked = [False] * col_cnt
+    locked_sum = 0.0
+    for i in range(col_cnt):
+        if ratios[i] < min_ratio:
+            locked[i] = True
+            locked_sum += min_ratio
+
+    remaining_ratio = 1.0 - locked_sum
+    unlocked_visual = sum(max_widths[i] for i in range(col_cnt) if not locked[i])
+
+    final_ratios = [0.0] * col_cnt
+    for i in range(col_cnt):
+        if locked[i]:
+            final_ratios[i] = min_ratio
+        elif unlocked_visual > 0:
+            final_ratios[i] = (max_widths[i] / unlocked_visual) * remaining_ratio
+        else:
+            final_ratios[i] = remaining_ratio / max(1, sum(1 for x in locked if not x))
+
+    # 4) HWPUNIT으로 변환
+    widths = [max(min_width_hwp, int(total_width * r)) for r in final_ratios]
+
+    # 5) 합계 보정 (반올림 오차 → 마지막 열에서 조정)
+    diff = total_width - sum(widths)
+    widths[-1] += diff
+
+    return widths
+
+
 def _append_markdown_table(
     parent: ET.Element, block: TableBlock, *, table_id: int, p_id: int, secpr_attached: bool
 ) -> tuple[int, int, bool]:
@@ -1555,8 +1866,28 @@ def _append_markdown_table(
             "noAdjust": "0",
         },
     )
-    row_height = int(TITLE_BODY_HEIGHT_HWP)
-    total_height = str(row_height * (len(block.rows) + 1))
+    # 열 너비 계산 (콘텐츠 기반 자동 조정) — 높이 계산보다 먼저 필요
+    total_width = int(TABLE_WIDTH_HWP)
+    col_widths = _compute_col_widths(block.header, block.rows, col_cnt, total_width)
+
+    # 행별 동적 높이 계산 함수
+    def _calc_row_height(cells: List[str], widths: List[int]) -> int:
+        """셀 내용 기반으로 행 높이를 동적 계산한다."""
+        max_lines = 1
+        for idx, cell_text in enumerate(cells[:col_cnt]):
+            clean = cell_text.lstrip("@합계").strip() if cell_text.startswith("@합계") else cell_text
+            if not clean:
+                continue
+            w = widths[idx] if idx < len(widths) else widths[-1]
+            lines = _estimate_line_count(clean, w, 11, 0)
+            if lines > max_lines:
+                max_lines = int(lines)
+        return max(TABLE_MIN_ROW_HEIGHT_HWP, max_lines * TABLE_LINE_HEIGHT_HWP + TABLE_ROW_PADDING_HWP)
+
+    # 모든 행의 높이를 미리 계산
+    header_height = _calc_row_height(block.header, col_widths)
+    body_heights = [_calc_row_height(row, col_widths) for row in block.rows]
+    total_height = str(header_height + sum(body_heights))
     ET.SubElement(
         tbl,
         _q("hp", "sz"),
@@ -1581,14 +1912,6 @@ def _append_markdown_table(
     )
     ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
     ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "510", "right": "510", "top": "141", "bottom": "141"})
-
-    # 열 너비 계산 (균등 분할)
-    total_width = int(TABLE_WIDTH_HWP)
-    base_width = total_width // col_cnt
-    col_widths = [base_width for _ in range(col_cnt)]
-    remainder = total_width - base_width * col_cnt
-    if remainder > 0:
-        col_widths[-1] += remainder
 
     # 테이블 테두리 ID (CONFIG에서 가져오기, 없으면 기본값)
     if CONFIG.tables and CONFIG.tables.borders:
@@ -1637,11 +1960,23 @@ def _append_markdown_table(
 
     cell_margin_attrs = {"left": "510", "right": "510", "top": "141", "bottom": "141"}
 
-    def _add_row(row_cells: List[str], *, is_header: bool, row_idx: int, border_ids: tuple[str, str, str], p_counter: int) -> int:
+    def _add_row(row_cells: List[str], *, is_header: bool, row_idx: int, border_ids: tuple[str, str, str], p_counter: int, cur_row_height: int) -> int:
         tr = ET.SubElement(tbl, _q("hp", "tr"))
         padded = list(row_cells) + [""] * (col_cnt - len(row_cells))
+
+        # @합계 태그 감지: 첫 셀이 "@합계"로 시작하면 합계 행
+        is_total_row = False
+        if padded and isinstance(padded[0], str) and padded[0].strip().startswith("@합계"):
+            is_total_row = True
+            padded[0] = padded[0].strip()[len("@합계"):].strip()  # 태그 제거
+
         for col_idx, cell_text in enumerate(padded[:col_cnt]):
-            border_fill = _pick_border_id(border_ids, col_idx)
+            # 합계 행 전용 border: 상단 이중선 + 하단 0.5mm 굵은선
+            if is_total_row:
+                TOTAL_ROW_BORDERS = ("38", "39", "40")
+                border_fill = _pick_border_id(TOTAL_ROW_BORDERS, col_idx)
+            else:
+                border_fill = _pick_border_id(border_ids, col_idx)
             tc = ET.SubElement(
                 tr,
                 _q("hp", "tc"),
@@ -1676,19 +2011,33 @@ def _append_markdown_table(
                 _q("hp", "p"),
                 {
                     "id": str(p_counter),
-                    "paraPrIDRef": TABLE_HEADER_PARA_ID if is_header else TABLE_BODY_PARA_ID,
-                    "styleIDRef": TABLE_HEADER_STYLE_ID if is_header else TABLE_BODY_STYLE_ID,
+                    "paraPrIDRef": TABLE_HEADER_PARA_ID if (is_header or is_total_row) else TABLE_BODY_PARA_ID,
+                    "styleIDRef": TABLE_HEADER_STYLE_ID if (is_header or is_total_row) else TABLE_BODY_STYLE_ID,
                     "pageBreak": "0",
                     "columnBreak": "0",
                     "merged": "0",
                 },
             )
-            char_id = TABLE_HEADER_CHAR_ID if is_header else TABLE_BODY_CHAR_ID
-            bold_id = TABLE_HEADER_CHAR_ID if is_header else TABLE_BODY_CHAR_ID
+            # 합계 행은 강제 Bold, 아니면 기존 텍스트 피팅 로직
+            if is_total_row:
+                char_id = TABLE_HEADER_CHAR_ID  # Bold
+                bold_id = TABLE_HEADER_CHAR_ID
+            else:
+                # 셀별 텍스트 피팅: 최적 (font_size, spacing) 조합 결정
+                fit_font, fit_spacing = _fit_cell_text(
+                    cell_text, col_widths[col_idx], is_header=is_header
+                )
+                fit_key = (fit_font, fit_spacing)
+                if is_header:
+                    char_id = TABLE_FIT_BOLD_CHAR_IDS.get(fit_key, TABLE_HEADER_CHAR_ID)
+                    bold_id = char_id
+                else:
+                    char_id = TABLE_FIT_CHAR_IDS.get(fit_key, TABLE_BODY_CHAR_ID)
+                    bold_id = TABLE_FIT_BOLD_CHAR_IDS.get(fit_key, TABLE_HEADER_CHAR_ID)
             _append_text_with_bold_custom(p, char_id, cell_text, bold_id)
             ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx)})
             ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
-            ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(col_widths[col_idx]), "height": str(row_height)})
+            ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(col_widths[col_idx]), "height": str(cur_row_height)})
             ET.SubElement(
                 tc,
                 _q("hp", "cellMargin"),
@@ -1698,11 +2047,11 @@ def _append_markdown_table(
         return p_counter
 
     p_counter = p_id
-    p_counter = _add_row(block.header, is_header=True, row_idx=0, border_ids=TABLE_HEADER_BORDERS, p_counter=p_counter)
+    p_counter = _add_row(block.header, is_header=True, row_idx=0, border_ids=TABLE_HEADER_BORDERS, p_counter=p_counter, cur_row_height=header_height)
     for idx, row in enumerate(block.rows):
         row_idx = idx + 1
         border_ids = _body_border_for_row(row_idx)
-        p_counter = _add_row(row, is_header=False, row_idx=row_idx, border_ids=border_ids, p_counter=p_counter)
+        p_counter = _add_row(row, is_header=False, row_idx=row_idx, border_ids=border_ids, p_counter=p_counter, cur_row_height=body_heights[idx])
 
     return p_counter, table_id + 1, secpr_attached
 
@@ -1873,6 +2222,269 @@ def _append_summary_table(
     )
 
     return p_counter, table_id + 1, secpr_attached
+
+
+def _append_process_table(
+    parent: ET.Element, block, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    """프로세스 흐름도를 표 기반으로 렌더링한다.
+    
+    각 단계는 테두리 있는 셀, 화살표는 테두리 없는 셀.
+    여러 행이면 ↓ 화살표 행을 중간에 삽입.
+    """
+    if not block.proc_rows:
+        return p_id, table_id, secpr_attached
+
+    # 제목 표기 (< 프로세스 제목 > 형태)
+    p_title = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": TABLE_TITLE_PARA_ID,
+            "styleIDRef": TABLE_TITLE_STYLE_ID,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    if not secpr_attached:
+        run_sec = ET.SubElement(p_title, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+    title_run = ET.SubElement(p_title, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+    title_t = ET.SubElement(title_run, _q("hp", "t"))
+    title_t.text = f"< {block.proc_title} >"
+    p_id += 1
+
+    # 최대 단계 수 (열 수 계산: 단계 셀 + 화살표 셀)
+    max_steps = max(len(steps) for steps, _ in block.proc_rows)
+    col_cnt = max_steps * 2 - 1  # 단계1, →, 단계2, →, 단계3 ...
+    if col_cnt < 1:
+        col_cnt = 1
+
+    # 행 수 계산: 각 proc_row마다 1행, 행 사이에 화살표 행 1개
+    row_count = len(block.proc_rows) * 2 - 1  # 데이터행 + 화살표행
+
+    total_width = int(TABLE_WIDTH_HWP)
+    arrow_col_width = 1800  # 화살표 열 너비 (~6mm, 여백 포함 → 충분히 보임)
+    n_arrow_cols = max_steps - 1  # 화살표 열 개수
+    remaining = total_width - (n_arrow_cols * arrow_col_width)
+    step_col_width = remaining // max_steps if max_steps > 0 else total_width
+    # 열별 너비 배열 생성: [단계, 화살표, 단계, 화살표, ..., 단계]
+    step_widths = []
+    for i in range(col_cnt):
+        if i % 2 == 0:
+            step_widths.append(step_col_width)
+        else:
+            step_widths.append(arrow_col_width)
+    # 반올림 보정 — 마지막 단계 열에 나머지 할당
+    used = sum(step_widths)
+    if used != total_width and step_widths:
+        step_widths[-1] += (total_width - used)
+
+    row_height = 3000  # 단계 셀 높이 (037 스타일: 좀 더 여유)
+    arrow_row_height = 1200  # ↓ 화살표 행 높이
+
+    # 표 wrapper — 기존 _append_markdown_table과 동일 구조
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "0",
+            "rowCnt": str(row_count),
+            "colCnt": str(col_cnt),
+            "cellSpacing": "0",
+            "borderFillIDRef": "1",
+            "noAdjust": "0",
+        },
+    )
+
+    total_h = 0
+    for ri in range(row_count):
+        if ri % 2 == 0:
+            total_h += row_height
+        else:
+            total_h += arrow_row_height
+    
+    ET.SubElement(tbl, _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE",
+         "height": str(total_h), "heightRelTo": "ABSOLUTE", "protect": "0"})
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "283", "right": "283", "top": "141", "bottom": "141"})
+
+    p_counter = p_id
+
+    # 원문자 번호 매핑
+    CIRCLED_NUMS = ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮","⑯","⑰","⑱","⑲","⑳"]
+
+    def _get_circled(n: int) -> str:
+        if 1 <= n <= len(CIRCLED_NUMS):
+            return CIRCLED_NUMS[n - 1]
+        return f"({n})"
+
+    # 전체 단계 번호 매기기 (모든 행 통틀어 연번)
+    step_number = 1
+
+    def _add_process_cell(tr_el, col_idx, row_idx_val, width, height, *,
+                          step_title="", step_desc="", arrow="", is_step=False,
+                          step_num=0):
+        """프로세스 셀 하나를 추가한다. 037 스타일."""
+        nonlocal p_counter
+        border_ref = PROCESS_STEP_BORDER_ID if is_step else PROCESS_ARROW_BORDER_ID
+        tc = ET.SubElement(tr_el, _q("hp", "tc"),
+            {"name": "", "header": "0", "hasMargin": "0", "protect": "0",
+             "editable": "0", "dirty": "0", "borderFillIDRef": border_ref})
+        sub_list = ET.SubElement(tc, _q("hp", "subList"),
+            {"id": "", "textDirection": "HORIZONTAL", "lineWrap": "BREAK",
+             "vertAlign": "CENTER", "linkListIDRef": "0", "linkListNextIDRef": "0",
+             "textWidth": "0", "textHeight": "0", "hasTextRef": "0", "hasNumRef": "0"})
+
+        if is_step:
+            # 1줄: ① 단계명 (Bold)
+            title_text = f"{_get_circled(step_num)} {step_title}" if step_num else step_title
+            p1 = ET.SubElement(sub_list, _q("hp", "p"),
+                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                 "columnBreak": "0", "merged": "0"})
+            run1 = ET.SubElement(p1, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
+            t1 = ET.SubElement(run1, _q("hp", "t"))
+            t1.text = title_text
+            p_counter += 1
+
+            # 2줄: 담당자/설명 (일반체)
+            if step_desc:
+                p2 = ET.SubElement(sub_list, _q("hp", "p"),
+                    {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                     "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                     "columnBreak": "0", "merged": "0"})
+                run2 = ET.SubElement(p2, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
+                t2 = ET.SubElement(run2, _q("hp", "t"))
+                t2.text = step_desc
+                p_counter += 1
+        else:
+            # 화살표 또는 빈 셀
+            p_arrow = ET.SubElement(sub_list, _q("hp", "p"),
+                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+                 "columnBreak": "0", "merged": "0"})
+            if arrow:
+                run_a = ET.SubElement(p_arrow, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
+                t_a = ET.SubElement(run_a, _q("hp", "t"))
+                t_a.text = arrow
+            p_counter += 1
+
+        ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx_val)})
+        ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+        ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(width), "height": str(height)})
+        # 화살표 셀은 여백 최소화, 단계 셀은 일반 여백
+        if is_step:
+            ET.SubElement(tc, _q("hp", "cellMargin"),
+                {"left": "170", "right": "170", "top": "113", "bottom": "113"})
+        else:
+            ET.SubElement(tc, _q("hp", "cellMargin"),
+                {"left": "28", "right": "28", "top": "113", "bottom": "113"})
+
+    actual_row = 0
+    for proc_idx, (steps, is_reversed) in enumerate(block.proc_rows):
+        # 데이터 행
+        tr = ET.SubElement(tbl, _q("hp", "tr"))
+
+        display_steps = list(steps)
+        if is_reversed:
+            display_steps = list(reversed(display_steps))
+
+        cell_idx = 0
+        for si, (name, desc) in enumerate(display_steps):
+            # 단계 셀
+            _add_process_cell(tr, cell_idx, actual_row,
+                              step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                              row_height,
+                              is_step=True, step_title=name, step_desc=desc,
+                              step_num=step_number)
+            step_number += 1
+            cell_idx += 1
+
+            # 화살표 셀
+            if si < len(display_steps) - 1 and cell_idx < col_cnt:
+                arrow_char = "←" if is_reversed else "→"
+                _add_process_cell(tr, cell_idx, actual_row,
+                                  step_widths[cell_idx],
+                                  row_height,
+                                  arrow=arrow_char)
+                cell_idx += 1
+
+        # 남은 열 채우기
+        while cell_idx < col_cnt:
+            _add_process_cell(tr, cell_idx, actual_row,
+                              step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                              row_height)
+            cell_idx += 1
+
+        actual_row += 1
+
+        # 행 사이 ↓ 화살표 행
+        if proc_idx < len(block.proc_rows) - 1:
+            tr_arrow = ET.SubElement(tbl, _q("hp", "tr"))
+            # ↓ 위치: 현재 행의 마지막 단계 (정방향=오른쪽 끝, 역방향=왼쪽 끝)
+            next_steps, next_reversed = block.proc_rows[proc_idx + 1]
+            # 현재 정방향이면 오른쪽 끝에 ↓, 현재 역방향이면 왼쪽에 ↓
+            if is_reversed:
+                down_col = 0  # 역방향의 마지막 단계 = 왼쪽
+            else:
+                down_col = (len(display_steps) - 1) * 2  # 정방향의 마지막 단계 열 인덱스
+
+            for ci in range(col_cnt):
+                arrow_txt = "↓" if ci == down_col else ""
+                _add_process_cell(tr_arrow, ci, actual_row,
+                                  step_widths[ci] if ci < len(step_widths) else step_widths[-1],
+                                  arrow_row_height,
+                                  arrow=arrow_txt)
+            actual_row += 1
+
+    p_id = p_counter
+    return p_id, table_id + 1, secpr_attached
+
 def mm_to_hwp(mm: float) -> str:
     """Convert millimeters to Hangul internal HWPUNIT."""
 
@@ -2313,13 +2925,44 @@ def build_header_xml() -> bytes:
             "bottom": ("DOT", "0.12 mm"),
         },
     )
+    # ID 38~40: 합계 행 전용 (상단 이중선 + 하단 0.5mm 굵은선)
+    add_border_fill_custom(
+        38,
+        borders={
+            "left": ("NONE", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        39,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+    add_border_fill_custom(
+        40,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("NONE", "0.12 mm"),
+            "top": ("DOUBLE_SLIM", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
 
     border_fills.set("itemCnt", str(border_fill_count))
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
 
-    def add_char_pr(char_id: int, height: int, hangul_font_id: int, *, bold: bool = False) -> None:
+    def add_char_pr(
+        char_id: int, height: int, hangul_font_id: int,
+        *, bold: bool = False, spacing: int = 0,
+    ) -> None:
         char = ET.SubElement(
             char_props,
             _q("hh", "charPr"),
@@ -2360,17 +3003,18 @@ def build_header_xml() -> bytes:
                 "user": "100",
             },
         )
+        sp = str(spacing)
         ET.SubElement(
             char,
             _q("hh", "spacing"),
             {
-                "hangul": "0",
-                "latin": "0",
-                "hanja": "0",
-                "japanese": "0",
-                "other": "0",
-                "symbol": "0",
-                "user": "0",
+                "hangul": sp,
+                "latin": sp,
+                "hanja": sp,
+                "japanese": sp,
+                "other": sp,
+                "symbol": sp,
+                "user": sp,
             },
         )
         ET.SubElement(
@@ -2414,24 +3058,45 @@ def build_header_xml() -> bytes:
         if bold:
             ET.SubElement(char, _q("hh", "bold"))
 
-    char_defs = [
-        (0, 1500, 1, False),   # 본문 휴먼명조 15pt
-        (1, 1000, 2, False),   # spacer 10pt
-        (2, 800, 2, False),    # spacer 8pt
-        (3, 600, 2, False),    # spacer 6pt
-        (4, 400, 2, False),    # spacer 4pt
-        (5, 1500, 0, True),    # 주제목 HY 15pt Bold
-        (6, 1500, 0, False),   # 소제목 HY 15pt
-        (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
-        (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
-        (9, 100, 2, False),    # 1pt filler
-        (10, 1300, 1, False),  # 머리말/꼬리말 휴먼명조 13pt
-        (11, 1100, 2, False),  # 표 본문 맑은고딕 11pt
-        (12, 1100, 2, True),   # 표 헤더 맑은고딕 11pt Bold
-        (13, 1200, 2, True),   # 표/요약표 볼드 맑은고딕 12pt
+    # 기본 charPr 정의 (id, height, font_id, bold, spacing)
+    char_defs: list[tuple[int, int, int, bool, int]] = [
+        (0, 1500, 1, False, 0),    # 본문 휴먼명조 15pt
+        (1, 1000, 2, False, 0),    # spacer 10pt
+        (2, 800, 2, False, 0),     # spacer 8pt
+        (3, 600, 2, False, 0),     # spacer 6pt
+        (4, 400, 2, False, 0),     # spacer 4pt
+        (5, 1500, 0, True, 0),     # 주제목 HY 15pt Bold
+        (6, 1500, 0, False, 0),    # 소제목 HY 15pt
+        (7, 1200, 2, False, 0),    # 설명3 맑은고딕 12pt
+        (8, 1500, 1, True, 0),     # 강조 휴먼 15pt Bold
+        (9, 100, 2, False, 0),     # 1pt filler
+        (10, 1300, 1, False, 0),   # 머리말/꼬리말 휴먼명조 13pt
+        (11, 1100, 2, False, 0),   # 표 본문 맑은고딕 11pt
+        (12, 1100, 2, True, 0),    # 표 헤더 맑은고딕 11pt Bold
+        (13, 1200, 2, True, 0),    # 표/요약표 볼드 맑은고딕 12pt
+        # --- 표 텍스트 피팅용 변형 charPr (일반) ---
+        (14, 1100, 2, False, -5),  # 11pt spacing -5%
+        (15, 1100, 2, False, -10), # 11pt spacing -10%
+        (16, 1100, 2, False, -15), # 11pt spacing -15%
+        (17, 1100, 2, False, -20), # 11pt spacing -20%
+        (18, 1000, 2, False, 0),   # 10pt spacing 0%
+        (19, 1000, 2, False, -5),  # 10pt spacing -5%
+        (20, 1000, 2, False, -10), # 10pt spacing -10%
+        (21, 1000, 2, False, -15), # 10pt spacing -15%
+        (22, 1000, 2, False, -20), # 10pt spacing -20%
+        # --- 표 텍스트 피팅용 변형 charPr (볼드/헤더) ---
+        (23, 1100, 2, True, -5),   # 11pt Bold spacing -5%
+        (24, 1100, 2, True, -10),  # 11pt Bold spacing -10%
+        (25, 1100, 2, True, -15),  # 11pt Bold spacing -15%
+        (26, 1100, 2, True, -20),  # 11pt Bold spacing -20%
+        (27, 1000, 2, True, 0),    # 10pt Bold spacing 0%
+        (28, 1000, 2, True, -5),   # 10pt Bold spacing -5%
+        (29, 1000, 2, True, -10),  # 10pt Bold spacing -10%
+        (30, 1000, 2, True, -15),  # 10pt Bold spacing -15%
+        (31, 1000, 2, True, -20),  # 10pt Bold spacing -20%
     ]
-    for cid, height, font_id, is_bold in char_defs:
-        add_char_pr(cid, height, font_id, bold=is_bold)
+    for cid, height, font_id, is_bold, sp in char_defs:
+        add_char_pr(cid, height, font_id, bold=is_bold, spacing=sp)
     char_props.set("itemCnt", str(len(char_defs)))
 
     # tabProperties: 3개 (참조 파일 기준)
@@ -2743,6 +3408,11 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
             continue
         if isinstance(block, SummaryTableBlock):
             p_id, table_id, secpr_attached = _append_summary_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+        if isinstance(block, ProcessBlock):
+            p_id, table_id, secpr_attached = _append_process_table(
                 root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
             )
             continue

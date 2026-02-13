@@ -1,5 +1,5 @@
 #!/bin/sh
-'''exec' "/home/d997/me retool new/v20260211 restart/.venv/bin/python3" "$0" "$@"
+'''exec' "/home/d997/new md retooling/.venv/bin/python3" "$0" "$@"
 ' '''
 # -*- coding: utf-8 -*-
 import re
