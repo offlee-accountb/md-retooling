@@ -254,6 +254,8 @@ EMPH_TABLE_BORDER_ID = "36"           # 연두 배경 + SOLID 테두리
 SUMMARY_TABLE_BORDER_ID = "37"        # 점선 테두리
 PROCESS_STEP_BORDER_ID = "3"          # 실선 테두리 (프로세스 단계 셀)
 PROCESS_ARROW_BORDER_ID = "1"         # 테두리 없음 (화살표 셀)
+PROCESS_TITLE_BORDER_ID = "41"        # 038 스타일: 상단 제목행 (연회색 배경 + 실선)
+PROCESS_DESC_BORDER_ID = "42"         # 038 스타일: 하단 설명행 (흰 배경 + 실선, 상단선 없음)
 
 # Spacer paragraph mapping: CONFIG.spacers에서 동적 생성
 def _build_spacer_char_map():
@@ -2309,18 +2311,21 @@ def _append_summary_table(
     return p_counter, table_id + 1, secpr_attached
 
 
+
 def _append_process_table(
     parent: ET.Element, block, *, table_id: int, p_id: int, secpr_attached: bool
 ) -> tuple[int, int, bool]:
-    """프로세스 흐름도를 표 기반으로 렌더링한다.
-    
-    각 단계는 테두리 있는 셀, 화살표는 테두리 없는 셀.
-    여러 행이면 ↓ 화살표 행을 중간에 삽입.
+    """프로세스 흐름도를 표로 렌더링한다. (038 스타일: 2행 블록)
+
+    각 단계 = 상단 제목행 (번호+단계명, 배경색) + 하단 설명행 (담당자, 흰 배경)
+    화살표 셀 = rowSpan=2로 상하 병합
+    block.proc_rows: [(steps, is_reversed), ...]
+    steps = [(name, desc), ...]
     """
     if not block.proc_rows:
         return p_id, table_id, secpr_attached
 
-    # 제목 표기 (< 프로세스 제목 > 형태)
+    # 제목 표기
     p_title = ET.SubElement(
         parent,
         _q("hp", "p"),
@@ -2348,30 +2353,34 @@ def _append_process_table(
     if col_cnt < 1:
         col_cnt = 1
 
-    # 행 수 계산: 각 proc_row마다 1행, 행 사이에 화살표 행 1개
-    row_count = len(block.proc_rows) * 2 - 1  # 데이터행 + 화살표행
+    # 행 수 계산: 각 proc_row마다 2행(제목+설명), 행 사이에 화살표행 1개
+    data_rows = len(block.proc_rows) * 2  # 제목행 + 설명행 per proc_row
+    arrow_rows = len(block.proc_rows) - 1  # 행간 ↓ 화살표행
+    row_count = data_rows + arrow_rows
 
     total_width = int(TABLE_WIDTH_HWP)
-    arrow_col_width = 1800  # 화살표 열 너비 (~6mm, 여백 포함 → 충분히 보임)
-    n_arrow_cols = max_steps - 1  # 화살표 열 개수
+    arrow_col_width = 1800  # 화살표 열 너비
+    n_arrow_cols = max_steps - 1
     remaining = total_width - (n_arrow_cols * arrow_col_width)
     step_col_width = remaining // max_steps if max_steps > 0 else total_width
-    # 열별 너비 배열 생성: [단계, 화살표, 단계, 화살표, ..., 단계]
+    # 열별 너비 배열: [단계, 화살표, 단계, ...]
     step_widths = []
     for i in range(col_cnt):
         if i % 2 == 0:
             step_widths.append(step_col_width)
         else:
             step_widths.append(arrow_col_width)
-    # 반올림 보정 — 마지막 단계 열에 나머지 할당
     used = sum(step_widths)
     if used != total_width and step_widths:
         step_widths[-1] += (total_width - used)
 
-    row_height = 3000  # 단계 셀 높이 (037 스타일: 좀 더 여유)
-    arrow_row_height = 1200  # ↓ 화살표 행 높이
+    title_row_height = 1600   # 상단 제목 행 높이
+    desc_row_height = 1800    # 하단 설명 행 높이
+    arrow_row_height = 1200   # ↓ 화살표 행 높이
 
-    # 표 wrapper — 기존 _append_markdown_table과 동일 구조
+    total_h = data_rows // 2 * (title_row_height + desc_row_height) + arrow_rows * arrow_row_height
+
+    # 표 wrapper
     p_wrapper = ET.SubElement(
         parent,
         _q("hp", "p"),
@@ -2408,13 +2417,6 @@ def _append_process_table(
         },
     )
 
-    total_h = 0
-    for ri in range(row_count):
-        if ri % 2 == 0:
-            total_h += row_height
-        else:
-            total_h += arrow_row_height
-    
     ET.SubElement(tbl, _q("hp", "sz"),
         {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE",
          "height": str(total_h), "heightRelTo": "ABSOLUTE", "protect": "0"})
@@ -2440,7 +2442,6 @@ def _append_process_table(
 
     p_counter = p_id
 
-    # 원문자 번호 매핑
     CIRCLED_NUMS = ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮","⑯","⑰","⑱","⑲","⑳"]
 
     def _get_circled(n: int) -> str:
@@ -2448,123 +2449,136 @@ def _append_process_table(
             return CIRCLED_NUMS[n - 1]
         return f"({n})"
 
-    # 전체 단계 번호 매기기 (모든 행 통틀어 연번)
     step_number = 1
 
-    def _add_process_cell(tr_el, col_idx, row_idx_val, width, height, *,
-                          step_title="", step_desc="", arrow="", is_step=False,
-                          step_num=0):
-        """프로세스 셀 하나를 추가한다. 037 스타일."""
+    def _make_cell(tr_el, col_idx, row_idx_val, width, height, *,
+                   text="", border_id="1", char_id=TABLE_BODY_CHAR_ID,
+                   row_span=1, auto_fit=False, is_bold=False):
+        """범용 셀 생성 헬퍼. auto_fit=True이면 자간/폰트 자동조정."""
         nonlocal p_counter
-        border_ref = PROCESS_STEP_BORDER_ID if is_step else PROCESS_ARROW_BORDER_ID
+
+        # 텍스트 피팅: 셀 너비에 맞게 자간 축소 (프로세스 전용: 11pt, -15%까지)
+        PROC_FIT_CANDIDATES = [(11, 0), (11, -5), (11, -10), (11, -15)]
+        actual_char_id = char_id
+        if auto_fit and text:
+            best = (11, 0)
+            best_lines = _estimate_line_count(text, width, 11, 0)
+            if best_lines > 1:
+                for font_pt, spacing in PROC_FIT_CANDIDATES[1:]:
+                    lines = _estimate_line_count(text, width, font_pt, spacing)
+                    if lines < best_lines:
+                        best_lines = lines
+                        best = (font_pt, spacing)
+                    if best_lines <= 1:
+                        break
+            if best != (11, 0):
+                ids = TABLE_FIT_BOLD_CHAR_IDS if is_bold else TABLE_FIT_CHAR_IDS
+                fit_id = ids.get(best)
+                if fit_id:
+                    actual_char_id = fit_id
+
         tc = ET.SubElement(tr_el, _q("hp", "tc"),
             {"name": "", "header": "0", "hasMargin": "0", "protect": "0",
-             "editable": "0", "dirty": "0", "borderFillIDRef": border_ref})
+             "editable": "0", "dirty": "0", "borderFillIDRef": border_id})
         sub_list = ET.SubElement(tc, _q("hp", "subList"),
             {"id": "", "textDirection": "HORIZONTAL", "lineWrap": "BREAK",
              "vertAlign": "CENTER", "linkListIDRef": "0", "linkListNextIDRef": "0",
              "textWidth": "0", "textHeight": "0", "hasTextRef": "0", "hasNumRef": "0"})
-
-        if is_step:
-            # 1줄: ① 단계명 (Bold)
-            title_text = f"{_get_circled(step_num)} {step_title}" if step_num else step_title
-            p1 = ET.SubElement(sub_list, _q("hp", "p"),
-                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
-                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
-                 "columnBreak": "0", "merged": "0"})
-            run1 = ET.SubElement(p1, _q("hp", "run"), {"charPrIDRef": TABLE_HEADER_CHAR_ID})
-            t1 = ET.SubElement(run1, _q("hp", "t"))
-            t1.text = title_text
-            p_counter += 1
-
-            # 2줄: 담당자/설명 (일반체)
-            if step_desc:
-                p2 = ET.SubElement(sub_list, _q("hp", "p"),
-                    {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
-                     "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
-                     "columnBreak": "0", "merged": "0"})
-                run2 = ET.SubElement(p2, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
-                t2 = ET.SubElement(run2, _q("hp", "t"))
-                t2.text = step_desc
-                p_counter += 1
-        else:
-            # 화살표 또는 빈 셀
-            p_arrow = ET.SubElement(sub_list, _q("hp", "p"),
-                {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
-                 "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
-                 "columnBreak": "0", "merged": "0"})
-            if arrow:
-                run_a = ET.SubElement(p_arrow, _q("hp", "run"), {"charPrIDRef": TABLE_BODY_CHAR_ID})
-                t_a = ET.SubElement(run_a, _q("hp", "t"))
-                t_a.text = arrow
-            p_counter += 1
-
+        p_el = ET.SubElement(sub_list, _q("hp", "p"),
+            {"id": str(p_counter), "paraPrIDRef": TABLE_HEADER_PARA_ID,
+             "styleIDRef": TABLE_HEADER_STYLE_ID, "pageBreak": "0",
+             "columnBreak": "0", "merged": "0"})
+        if text:
+            run_el = ET.SubElement(p_el, _q("hp", "run"), {"charPrIDRef": actual_char_id})
+            t_el = ET.SubElement(run_el, _q("hp", "t"))
+            t_el.text = text
+        p_counter += 1
         ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx_val)})
-        ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+        ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": str(row_span)})
         ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(width), "height": str(height)})
-        # 화살표 셀은 여백 최소화, 단계 셀은 일반 여백
-        if is_step:
-            ET.SubElement(tc, _q("hp", "cellMargin"),
-                {"left": "170", "right": "170", "top": "113", "bottom": "113"})
-        else:
-            ET.SubElement(tc, _q("hp", "cellMargin"),
-                {"left": "28", "right": "28", "top": "113", "bottom": "113"})
+        is_arrow = (border_id == PROCESS_ARROW_BORDER_ID)
+        margin_lr = "28" if is_arrow else "170"
+        ET.SubElement(tc, _q("hp", "cellMargin"),
+            {"left": margin_lr, "right": margin_lr, "top": "56", "bottom": "56"})
 
     actual_row = 0
     for proc_idx, (steps, is_reversed) in enumerate(block.proc_rows):
-        # 데이터 행
-        tr = ET.SubElement(tbl, _q("hp", "tr"))
-
         display_steps = list(steps)
         if is_reversed:
             display_steps = list(reversed(display_steps))
 
+        # === 제목 행 (상단, 배경색) ===
+        tr_title = ET.SubElement(tbl, _q("hp", "tr"))
         cell_idx = 0
         for si, (name, desc) in enumerate(display_steps):
-            # 단계 셀
-            _add_process_cell(tr, cell_idx, actual_row,
-                              step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
-                              row_height,
-                              is_step=True, step_title=name, step_desc=desc,
-                              step_num=step_number)
+            title_text = f"{_get_circled(step_number)} {name}"
+            _make_cell(tr_title, cell_idx, actual_row,
+                       step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                       title_row_height,
+                       text=title_text,
+                       border_id=PROCESS_TITLE_BORDER_ID,
+                       char_id=TABLE_HEADER_CHAR_ID,
+                       auto_fit=True, is_bold=True)
             step_number += 1
             cell_idx += 1
-
-            # 화살표 셀
+            # 화살표 셀 (rowSpan=2)
             if si < len(display_steps) - 1 and cell_idx < col_cnt:
                 arrow_char = "←" if is_reversed else "→"
-                _add_process_cell(tr, cell_idx, actual_row,
-                                  step_widths[cell_idx],
-                                  row_height,
-                                  arrow=arrow_char)
+                _make_cell(tr_title, cell_idx, actual_row,
+                           step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                           title_row_height + desc_row_height,
+                           text=arrow_char,
+                           border_id=PROCESS_ARROW_BORDER_ID,
+                           char_id=TABLE_BODY_CHAR_ID,
+                           row_span=2)
                 cell_idx += 1
-
         # 남은 열 채우기
         while cell_idx < col_cnt:
-            _add_process_cell(tr, cell_idx, actual_row,
-                              step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
-                              row_height)
+            _make_cell(tr_title, cell_idx, actual_row,
+                       step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                       title_row_height,
+                       border_id=PROCESS_ARROW_BORDER_ID)
             cell_idx += 1
-
         actual_row += 1
 
-        # 행 사이 ↓ 화살표 행
+        # === 설명 행 (하단, 흰 배경) ===
+        tr_desc = ET.SubElement(tbl, _q("hp", "tr"))
+        cell_idx = 0
+        si_counter = 0
+        for si, (name, desc) in enumerate(display_steps):
+            _make_cell(tr_desc, cell_idx, actual_row,
+                       step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                       desc_row_height,
+                       text=desc,
+                       border_id=PROCESS_DESC_BORDER_ID,
+                       char_id=TABLE_BODY_CHAR_ID,
+                       auto_fit=True, is_bold=False)
+            cell_idx += 1
+            # 화살표 셀은 rowSpan으로 이미 병합됨 → 건너뜀
+            if si < len(display_steps) - 1 and cell_idx < col_cnt:
+                cell_idx += 1  # skip merged arrow cell
+        while cell_idx < col_cnt:
+            _make_cell(tr_desc, cell_idx, actual_row,
+                       step_widths[cell_idx] if cell_idx < len(step_widths) else step_widths[-1],
+                       desc_row_height,
+                       border_id=PROCESS_ARROW_BORDER_ID)
+            cell_idx += 1
+        actual_row += 1
+
+        # === ↓ 화살표 행 (행 사이) ===
         if proc_idx < len(block.proc_rows) - 1:
             tr_arrow = ET.SubElement(tbl, _q("hp", "tr"))
-            # ↓ 위치: 현재 행의 마지막 단계 (정방향=오른쪽 끝, 역방향=왼쪽 끝)
-            next_steps, next_reversed = block.proc_rows[proc_idx + 1]
-            # 현재 정방향이면 오른쪽 끝에 ↓, 현재 역방향이면 왼쪽에 ↓
             if is_reversed:
-                down_col = 0  # 역방향의 마지막 단계 = 왼쪽
+                down_col = 0
             else:
-                down_col = (len(display_steps) - 1) * 2  # 정방향의 마지막 단계 열 인덱스
-
+                down_col = (len(display_steps) - 1) * 2
             for ci in range(col_cnt):
                 arrow_txt = "↓" if ci == down_col else ""
-                _add_process_cell(tr_arrow, ci, actual_row,
-                                  step_widths[ci] if ci < len(step_widths) else step_widths[-1],
-                                  arrow_row_height,
-                                  arrow=arrow_txt)
+                _make_cell(tr_arrow, ci, actual_row,
+                           step_widths[ci] if ci < len(step_widths) else step_widths[-1],
+                           arrow_row_height,
+                           text=arrow_txt,
+                           border_id=PROCESS_ARROW_BORDER_ID)
             actual_row += 1
 
     p_id = p_counter
@@ -3335,6 +3349,28 @@ def build_header_xml() -> bytes:
             "right": ("NONE", "0.12 mm"),
             "top": ("DOUBLE_SLIM", "0.5 mm"),
             "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+
+    # ID 41: 프로세스 제목 행 (연회색 배경 + 실선 테두리)
+    add_border_fill_custom(
+        41,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("SOLID", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+        fill_brush={"faceColor": "#D6E4F0", "hatchColor": "#999999", "alpha": "0"},
+    )
+    # ID 42: 프로세스 설명 행 (흰 배경 + 실선 테두리, 상단선 없음 — 제목행이 이미 있음)
+    add_border_fill_custom(
+        42,
+        borders={
+            "left": ("SOLID", "0.12 mm"),
+            "right": ("SOLID", "0.12 mm"),
+            "top": ("NONE", "0.12 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
         },
     )
 
