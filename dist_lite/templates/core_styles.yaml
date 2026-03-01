@@ -1,0 +1,612 @@
+# =============================================================================
+# HWPX 스타일 정의서 (core_styles.yaml)
+# =============================================================================
+# 이 파일은 MD→HWPX 변환기에서 사용하는 모든 스타일 값을 정의합니다.
+# 문서별 커스터마이징 시 이 파일을 복사하여 수정하세요.
+# =============================================================================
+
+version: "1.0"
+template_id: "default"
+description: "기본 공문서 스타일 (Phase 1.5)"
+
+# =============================================================================
+# 단위 변환 상수
+# =============================================================================
+units:
+  hwp_per_mm: 283.464566929 # 1mm = 283.46 HWP units
+  hwp_per_pt: 100 # 1pt = 100 HWP units (height 기준)
+
+# =============================================================================
+# 페이지 설정
+# =============================================================================
+page:
+  size: A4
+  width_mm: 210.0
+  height_mm: 297.0
+  # HWP 내부 단위 (자동 계산되지만 참조용으로 명시)
+  width_hwp: 59528
+  height_hwp: 84186
+
+  margins_mm:
+    top: 15.0
+    bottom: 15.0
+    left: 20.0
+    right: 20.0
+    header: 10.0
+    footer: 10.0
+    gutter: 0
+
+  border_offset_mm: 5.0
+
+# =============================================================================
+# 폰트 정의
+# =============================================================================
+# 폰트 ID는 header.xml의 fontfaces에서 참조됨
+# 7개 언어 모두 동일 폰트 세트 사용
+fonts:
+  - id: 0
+    name: "HY헤드라인M"
+    type: TTF
+    family_type: FCAT_GOTHIC
+    usage:
+      - title
+      - subtitle
+
+  - id: 1
+    name: "휴먼명조"
+    type: TTF
+    family_type: FCAT_GOTHIC
+    usage:
+      - body
+      - emphasis
+      - header_footer
+
+  - id: 2
+    name: "맑은 고딕"
+    type: TTF
+    family_type: FCAT_GOTHIC
+    usage:
+      - desc
+      - table
+      - spacer
+
+# =============================================================================
+# 글자 속성 (charProperties)
+# =============================================================================
+# height는 pt 단위 (변환 시 ×100)
+# font_id는 위 fonts 섹션 참조
+char_properties:
+  # === 본문 계열 ===
+  - id: 0
+    name: "본문"
+    font_id: 1 # 휴먼명조
+    height_pt: 15
+    bold: false
+    text_color: "#000000"
+
+  # === Spacer 계열 (줄간격 확보용) ===
+  - id: 1
+    name: "spacer_10pt"
+    font_id: 2 # 맑은 고딕
+    height_pt: 10
+    bold: false
+
+  - id: 2
+    name: "spacer_8pt"
+    font_id: 2
+    height_pt: 8
+    bold: false
+
+  - id: 3
+    name: "spacer_6pt"
+    font_id: 2
+    height_pt: 6
+    bold: false
+
+  - id: 4
+    name: "spacer_4pt"
+    font_id: 2
+    height_pt: 4
+    bold: false
+
+  # === 제목 계열 ===
+  - id: 5
+    name: "주제목"
+    font_id: 0 # HY헤드라인M
+    height_pt: 15
+    bold: true
+
+  - id: 6
+    name: "소제목"
+    font_id: 0 # HY헤드라인M
+    height_pt: 15
+    bold: false
+
+  # === 설명/표 계열 ===
+  - id: 7
+    name: "설명3"
+    font_id: 2 # 맑은 고딕
+    height_pt: 12
+    bold: false
+
+  - id: 8
+    name: "강조"
+    font_id: 1 # 휴먼명조
+    height_pt: 15
+    bold: true
+
+  - id: 9
+    name: "filler_1pt"
+    font_id: 2
+    height_pt: 1
+    bold: false
+
+  - id: 10
+    name: "머리말꼬리말"
+    font_id: 1 # 휴먼명조
+    height_pt: 13
+    bold: false
+
+  - id: 11
+    name: "표본문"
+    font_id: 2 # 맑은 고딕
+    height_pt: 11
+    bold: false
+
+  - id: 12
+    name: "표헤더"
+    font_id: 2 # 맑은 고딕
+    height_pt: 11
+    bold: true
+
+  - id: 13
+    name: "표볼드"
+    font_id: 2 # 맑은 고딕
+    height_pt: 12
+    bold: true
+
+# =============================================================================
+# 문단 속성 (paraProperties)
+# =============================================================================
+# align: JUSTIFY | LEFT | CENTER | RIGHT
+# line_spacing: 퍼센트 (160 = 160%)
+# indent_hwp: 음수=내어쓰기, 양수=들여쓰기 (HWP 단위)
+para_properties:
+  - id: 0
+    name: "기본"
+    align: JUSTIFY
+    line_spacing_pct: 160
+    indent_hwp: 0
+    font_line_height: true
+    snap_to_grid: false
+
+  - id: 1
+    name: "주제목"
+    align: CENTER
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 2
+    name: "소제목"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: 0
+
+  - id: 3
+    name: "예비3"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: 0
+
+  - id: 4
+    name: "예비4"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: 0
+
+  - id: 5
+    name: "예비5"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: 0
+
+  - id: 6
+    name: "강조"
+    align: CENTER
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 7
+    name: "예비7"
+    align: LEFT
+    line_spacing_pct: 150
+    indent_hwp: 0
+
+  - id: 8
+    name: "설명2"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: -3750 # 내어쓰기 37.5pt
+
+  - id: 9
+    name: "본문"
+    align: JUSTIFY
+    line_spacing_pct: 160
+    indent_hwp: -3000 # 내어쓰기 30pt
+    snap_to_grid: false
+
+  - id: 10
+    name: "설명3"
+    align: LEFT
+    line_spacing_pct: 160
+    indent_hwp: -3500 # 내어쓰기 35pt
+
+  - id: 11
+    name: "예비11"
+    align: LEFT
+    line_spacing_pct: 135
+    indent_hwp: 0
+
+  - id: 12
+    name: "머리말"
+    align: RIGHT
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 13
+    name: "꼬리말"
+    align: RIGHT
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 14
+    name: "표제목"
+    align: CENTER
+    line_spacing_pct: 160
+    indent_hwp: 0
+
+  - id: 15
+    name: "표헤더"
+    align: CENTER
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 16
+    name: "표본문"
+    align: CENTER
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 17
+    name: "요약표wrapper"
+    align: CENTER
+    line_spacing_pct: 130
+    indent_hwp: 0
+
+  - id: 18
+    name: "요약표본문"
+    align: LEFT
+    line_spacing_pct: 130
+    indent_hwp: 0 # 들여쓰기 없음
+
+  - id: 19
+    name: "요약표설명"
+    align: LEFT
+    line_spacing_pct: 130
+    indent_hwp: 500 # 들여쓰기 5pt
+
+# =============================================================================
+# 스타일 매핑 (BlockType → ID 조합)
+# =============================================================================
+# 각 블록 타입에 대해 style_id, para_pr_id, char_pr_id 정의
+styles:
+  title:
+    style_id: 1
+    para_pr_id: 1
+    char_pr_id: 5
+    name_ko: "주제목"
+    name_en: "MainTitle"
+
+  subtitle:
+    style_id: 2
+    para_pr_id: 2
+    char_pr_id: 6
+    name_ko: "소제목"
+    name_en: "SubTitle"
+
+  body:
+    style_id: 3
+    para_pr_id: 9
+    char_pr_id: 0
+    name_ko: "본문"
+    name_en: "Body"
+
+  desc2:
+    style_id: 4
+    para_pr_id: 8
+    char_pr_id: 0
+    name_ko: "설명2"
+    name_en: "Desc2"
+
+  desc3:
+    style_id: 5
+    para_pr_id: 10
+    char_pr_id: 7
+    name_ko: "설명3"
+    name_en: "Desc3"
+
+  emphasis:
+    style_id: 6
+    para_pr_id: 6
+    char_pr_id: 8
+    name_ko: "강조"
+    name_en: "Emphasis"
+
+  plain:
+    style_id: 0
+    para_pr_id: 0
+    char_pr_id: 0
+    name_ko: "바탕글"
+    name_en: "Normal"
+
+  header:
+    style_id: 12
+    para_pr_id: 12
+    char_pr_id: 10
+    name_ko: "머리말"
+    name_en: "Header"
+
+  footer:
+    style_id: 13
+    para_pr_id: 13
+    char_pr_id: 10
+    name_ko: "꼬리말"
+    name_en: "Footer"
+
+# =============================================================================
+# Spacer 매핑 (블록 타입 앞 줄간격용)
+# =============================================================================
+spacers:
+  subtitle:
+    char_pr_id: 1
+    height_pt: 10
+  body:
+    char_pr_id: 2
+    height_pt: 8
+  desc2:
+    char_pr_id: 3
+    height_pt: 6
+  desc3:
+    char_pr_id: 4
+    height_pt: 4
+
+# =============================================================================
+# 테이블 기본 설정
+# =============================================================================
+tables:
+  # 표 공통 설정
+  default:
+    width_hwp: 48189 # 약 170mm
+    cell_margin_mm:
+      left: 1.8
+      right: 1.8
+      top: 0.5
+      bottom: 0.5
+    out_margin_hwp: 283
+    in_margin_mm:
+      left: 1.8
+      right: 1.8
+      top: 0.5
+      bottom: 0.5
+
+  # 표 스타일 ID
+  styles:
+    title_para_id: 14
+    header_para_id: 15
+    body_para_id: 16
+    header_char_id: 12
+    body_char_id: 11
+    header_style_id: 15
+    body_style_id: 16
+
+  # 테두리 ID (열 위치별)
+  # (first_col, middle_cols, last_col)
+  borders:
+    header: [12, 13, 14] # 헤더행 (보라 배경)
+    body_top: [9, 10, 11] # 본문 첫행 (이중선)
+    body_middle: [4, 3, 5] # 본문 중간행
+    body_bottom: [6, 7, 8] # 본문 마지막행
+
+  # 주제목 표 전용
+  title_table:
+    row_heights_hwp: [200, 3174, 200] # spacer, body, spacer
+    spacer_border_id: 101
+    body_border_id: 102
+    spacer_char_id: 9
+
+  # 강조 표 전용
+  emphasis_table:
+    height_hwp: 2632
+    row_height_hwp: 521
+    border_id: 103
+
+  # 요약표 전용
+  summary_table:
+    border_id: 104
+    body_para_id: 18
+    desc_para_id: 19
+    body_style_id: 17
+    desc_style_id: 18
+    spacer_char_id: 3 # 4pt spacer
+
+# =============================================================================
+# 테두리/채우기 정의 (borderFills)
+# =============================================================================
+# 기본 팔레트 (ID 1-18) + 스타일북 세트 (19-33) + 커스텀 (101-104)
+border_fills:
+  # === 기본 (ID 1-2) ===
+  - id: 1
+    name: "빈테두리"
+    borders: null
+    fill: null
+
+  - id: 2
+    name: "기본채우기"
+    borders: null
+    fill:
+      face_color: "none"
+      hatch_color: "#999999"
+
+  # === 데이터 표 팔레트 (ID 3-14) ===
+  - id: 3
+    name: "표_중간_전체"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 4
+    name: "표_중간_좌없음"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 5
+    name: "표_중간_우없음"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 6
+    name: "표_하단_좌없음"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+
+  - id: 7
+    name: "표_하단_전체"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+
+  - id: 8
+    name: "표_하단_우없음"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.5 mm"]
+
+  - id: 9
+    name: "표_본문첫행_좌없음"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [DOUBLE_SLIM, "0.5 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 10
+    name: "표_본문첫행_전체"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [DOUBLE_SLIM, "0.5 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 11
+    name: "표_본문첫행_우없음"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [DOUBLE_SLIM, "0.5 mm"]
+      bottom: [SOLID, "0.12 mm"]
+
+  - id: 12
+    name: "표_헤더_좌없음"
+    borders:
+      left: [NONE, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE_SLIM, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 13
+    name: "표_헤더_전체"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE_SLIM, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 14
+    name: "표_헤더_우없음"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [NONE, "0.12 mm"]
+      top: [SOLID, "0.5 mm"]
+      bottom: [DOUBLE_SLIM, "0.5 mm"]
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  # === 커스텀 (ID 101-104) ===
+  - id: 101
+    name: "주제목_spacer"
+    borders: null
+    fill:
+      face_color: "#EBDEF1"
+      hatch_color: "#999999"
+
+  - id: 102
+    name: "주제목_body"
+    borders: null
+    fill: null
+
+  - id: 103
+    name: "강조표"
+    borders:
+      left: [SOLID, "0.12 mm"]
+      right: [SOLID, "0.12 mm"]
+      top: [SOLID, "0.12 mm"]
+      bottom: [SOLID, "0.12 mm"]
+    fill:
+      face_color: "#CDF2E4"
+      hatch_color: "#999999"
+
+  - id: 104
+    name: "요약표"
+    borders:
+      left: [DOTTED, "0.12 mm"]
+      right: [DOTTED, "0.12 mm"]
+      top: [DOTTED, "0.12 mm"]
+      bottom: [DOTTED, "0.12 mm"]
+    fill: null
+
+# =============================================================================
+# 머리말/꼬리말 설정
+# =============================================================================
+header_footer:
+  header:
+    text: "" # 기본값 없음 (MD에서 지정)
+    para_pr_id: 12
+    char_pr_id: 10
+    style_id: 12
+  footer:
+    text: ""
+    para_pr_id: 13
+    char_pr_id: 10
+    style_id: 13

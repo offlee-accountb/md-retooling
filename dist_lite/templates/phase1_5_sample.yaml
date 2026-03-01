@@ -1,0 +1,226 @@
+meta:
+  template_id: phase1-finished-sample
+  version: 0.2.0
+  owner: phase1.5-team
+  description: Validator schema aligned with (phase 1 finished) sample
+  max_blocks: 32
+
+document:
+  page:
+    size: A4
+    margin_mm:
+      top: 20
+      bottom: 15
+      left: 25
+      right: 25
+  defaults:
+    font: Malgun Gothic
+    font_size: 11
+    line_spacing: 160
+    align: justify
+
+blocks:
+  - id: cover_title_table
+    type: table
+    table:
+      rows: 3
+      cols: 1
+      cells:
+        - row: 2
+          col: 1
+          text: "스마트제조 테스트베드 현황 및 AI 테스트베드 구축 검토 보고"
+
+  - id: section_overview_heading
+    type: body
+    text:
+      match: exact
+      value: "□ 스마트제조 테스트베드 개요"
+
+  - id: section_overview_background
+    type: body
+    text:
+      match: exact
+      value: "◦ (추진 배경) 중소기업의 스마트공장 도입 시 기술 검증 및 실증 환경 부족 문제 해소하고 제조기술 고도화 및 고가 장비·시스템의 공동 활용 기반 마련"
+
+  - id: section_overview_configuration
+    type: body
+    text:
+      match: exact
+      value: "◦ (구성) 지역별 산업 특성과 수요에 따라 3개 유형으로 구축·운영 중 (6개소)"
+
+  - id: section_overview_types
+    type: list
+    source: "-"
+    list:
+      min_items: 3
+      max_items: 3
+      normalize_whitespace: true
+
+  - id: section_status_heading
+    type: body
+    text:
+      match: exact
+      value: "□ 스마트제조 테스트베드 구축 및 운영 현황"
+
+  - id: section_status_budget
+    type: body
+    text:
+      match: contains
+      value: "(투입예산)"
+
+  - id: section_status_budget_note
+    type: note
+    text:
+      match: contains
+      value: "국비 : 장비구축"
+
+  - id: section_status_capability
+    type: body
+    text:
+      match: contains
+      value: "(주요 실증 역량)"
+
+  - id: section_status_regional_cases
+    type: list
+    source: "-"
+    list:
+      min_items: 6
+      max_items: 6
+      normalize_whitespace: true
+
+  - id: section_status_current
+    type: body
+    text:
+      match: contains
+      value: "(현황)"
+
+  - id: section_status_maintenance
+    type: body
+    text:
+      match: contains
+      value: "(유지관리)"
+
+  - id: section_status_maintenance_note
+    type: note
+    text:
+      match: contains
+      value: "사이트 및 연락처"
+
+  - id: section_status_usage
+    type: body
+    text:
+      match: contains
+      value: "(활용실적)"
+
+  - id: section_status_usage_note_a
+    type: note
+    text:
+      match: contains
+      value: "기업 수요기반"
+
+  - id: section_status_usage_note_b
+    type: note
+    text:
+      match: contains
+      value: "기술 고도화"
+
+  - id: section_status_sustainability
+    type: body
+    text:
+      match: contains
+      value: "(지속가능성)"
+
+  - id: section_status_sustainability_note
+    type: note
+    text:
+      match: contains
+      value: "운영비 확보방안"
+
+  - id: section_ai_heading
+    type: body
+    text:
+      match: exact
+      value: "□ AI 테스트베드 구축 검토(안)"
+
+  - id: section_ai_highlight_table
+    type: table
+    table:
+      rows: 1
+      cols: 1
+      cells:
+        - row: 1
+          col: 1
+          text: "◈ AI기반 스마트제조혁신 3.0 전략 中 테스트베드 부분"
+
+  - id: section_ai_strategy3
+    type: body
+    text:
+      match: contains
+      value: "(전략 3)"
+
+  - id: section_ai_strategy_actions
+    type: list
+    source: "-"
+    list:
+      min_items: 2
+      max_items: 2
+      normalize_whitespace: true
+
+  - id: section_ai_option1
+    type: body
+    text:
+      match: contains
+      value: "(1안)"
+
+  - id: section_ai_option1_detail
+    type: list
+    source: "-"
+    list:
+      min_items: 2
+      max_items: 2
+      normalize_whitespace: true
+
+  - id: section_ai_option1_note_a
+    type: note
+    text:
+      match: contains
+      value: "H/W"
+
+  - id: section_ai_option1_note_b
+    type: note
+    text:
+      match: contains
+      value: "제천"
+
+  - id: section_ai_option2
+    type: body
+    text:
+      match: contains
+      value: "(2안)"
+
+  - id: section_ai_option2_detail
+    type: list
+    source: "-"
+    list:
+      min_items: 2
+      max_items: 2
+      normalize_whitespace: true
+
+  - id: section_ai_option2_note
+    type: note
+    text:
+      match: contains
+      value: "충남, 충북"
+
+validation:
+  severity_map:
+    missing_block: error
+    text_mismatch: error
+    style_mismatch: warn
+    table_shape_mismatch: error
+  tolerances:
+    line_spacing_pct: 5
+    font_size_pt: 0.5
+  report:
+    format: json
+    output_dir: output
