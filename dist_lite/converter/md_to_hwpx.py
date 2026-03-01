@@ -1,56 +1,47 @@
 #!/usr/bin/env python3
-"""Phase1: Minimal MD → HWPX converter skeleton.
+"""MD → HWPX 변환기 (dist_lite 단일 파일 배포판).
 
-Goal (MVP):
-- Read `sample_input.md`-style markdown.
-- Parse lines into typed blocks (TITLE, SUBTITLE, BODY, DESC2, DESC3, EMPHASIS, PLAIN).
-- Build an in-memory HWPX-like XML tree (single section, simple run/para structure).
-- Save to `.hwpx` file (ZIP container with minimal XMLs).
+이 파일은 converter/ 패키지의 모든 모듈을 하나로 합친 것입니다.
+자동 생성: build_dist_lite.py
 
-NOTE:
-- This is a skeleton: XML structure is intentionally simple and will be
-  refined against the HWPX spec using `tools/spec_search.py`.
-- For now we only guarantee that the output is a well-formed ZIP+XML file.
+모듈 구성:
+- models          : 데이터 모델 (BlockType, Block, ...)
+- preview_data    : 미리보기 PNG 데이터
+- config          : 설정/상수/NS/_q
+- renderers       : 인라인, 텍스트 피팅, 표, 프로세스/도식도
+- parser          : MD 파싱
+- xml_builder     : XML 빌더 (header.xml, section0.xml, ...)
+- md_to_hwpx      : ZIP 패키징 + CLI
 """
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum, auto
-from pathlib import Path
-from typing import Iterable, List, Optional, TYPE_CHECKING
 import argparse
 import base64
 import getpass
 import re
-import zipfile
+import sys
 import xml.etree.ElementTree as ET
+import zipfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum, auto
+from pathlib import Path
+from typing import Iterable, List, Optional, TYPE_CHECKING
 
-# Style config loading (PyInstaller 호환)
-_BASE_DIR = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).parent.parent
-sys.path.insert(0, str(_BASE_DIR))
+# Ensure project root is in sys.path
+_PROJECT_ROOT = str(Path(__file__).parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 from validator.template_loader import load_style_config, StyleConfig
 
-# ---------------------------------------------------------------------------
-# Load style configuration (YAML-based)
-# ---------------------------------------------------------------------------
 
-_DEFAULT_STYLE_PATH = _BASE_DIR / "templates" / "core_styles.yaml"
+# ========================================================================
+# Module: models
+# ========================================================================
 
-def _load_config() -> StyleConfig:
-    """Load style configuration from YAML."""
-    if _DEFAULT_STYLE_PATH.exists():
-        return load_style_config(_DEFAULT_STYLE_PATH)
-    # Fallback: return empty config (will use hardcoded defaults)
-    from validator.template_loader import StyleConfig
-    return StyleConfig(version="1.0", template_id="fallback", description="Hardcoded fallback")
 
-CONFIG: StyleConfig = _load_config()
-
-# ---------------------------------------------------------------------------
-# Data model for parsed markdown
-# ---------------------------------------------------------------------------
+from datetime import datetime
 
 
 class BlockType(Enum):
@@ -135,173 +126,9 @@ class DocumentMetadata:
     display_date: str
 
 
-# ---------------------------------------------------------------------------
-# Style mapping layer (logical BlockType → paraPr/charPr IDs)
-# Dynamically built from CONFIG (core_styles.yaml)
-# ---------------------------------------------------------------------------
-
-def _build_style_maps() -> tuple:
-    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성.
-
-    **스타일 통일 전략**:
-    일반 텍스트 문단(SUBTITLE, BODY, DESC2, DESC3, PLAIN)은 모두 BODY의
-    styleIDRef / paraPrIDRef를 공유한다. 이렇게 하면 한글에서 백스페이스로
-    문단을 합칠 때 폰트가 바뀌는 문제를 방지할 수 있다.
-    TITLE과 EMPHASIS는 표 안에서 렌더링되므로 별도 styleIDRef 유지 가능.
-    시각적 차이(폰트, 크기)는 charPrIDRef(run 레벨)로만 제어한다.
-    """
-    # BlockType 이름 → YAML 키 매핑
-    block_to_yaml = {
-        BlockType.TITLE: "title",
-        BlockType.SUBTITLE: "subtitle",
-        BlockType.BODY: "body",
-        BlockType.DESC2: "desc2",
-        BlockType.DESC3: "desc3",
-        BlockType.EMPHASIS: "emphasis",
-        BlockType.PLAIN: "plain",
-    }
-
-    para_map = {}
-    char_map = {}
-    style_map = {}
-
-    for block_type, yaml_key in block_to_yaml.items():
-        style = CONFIG.get_style(yaml_key)
-        if style:
-            para_map[block_type] = str(style.para_pr_id)
-            char_map[block_type] = str(style.char_pr_id)
-            style_map[block_type] = str(style.style_id)
-        else:
-            # Fallback to 0 if not defined
-            para_map[block_type] = "0"
-            char_map[block_type] = "0"
-            style_map[block_type] = "0"
-
-    # --- 스타일 통일: 일반 텍스트 문단은 BODY 기준으로 통일 ---
-    # TITLE/EMPHASIS는 표 안이므로 제외
-    body_style = CONFIG.get_style("body")
-    if body_style:
-        unified_style_id = str(body_style.style_id)
-        unified_para_id = str(body_style.para_pr_id)
-        for bt in (BlockType.SUBTITLE, BlockType.BODY, BlockType.DESC2,
-                    BlockType.DESC3, BlockType.PLAIN):
-            style_map[bt] = unified_style_id
-            para_map[bt] = unified_para_id
-
-    return para_map, char_map, style_map
-
-PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
-
-INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
-
-# ---------------------------------------------------------------------------
-# Config-driven constants (from core_styles.yaml via CONFIG)
-# ---------------------------------------------------------------------------
-
-HWPUNITS_PER_MM = CONFIG.hwp_per_mm
-
-# Page dimensions
-PAGE_WIDTH_MM = CONFIG.page.width_mm
-PAGE_HEIGHT_MM = CONFIG.page.height_mm
-PAGE_WIDTH_HWP = str(CONFIG.page.width_hwp)
-PAGE_HEIGHT_HWP = str(CONFIG.page.height_hwp)
-
-# Page margins
-MARGIN_TOP_MM = CONFIG.page.margins_mm.get("top", 15.0)
-MARGIN_BOTTOM_MM = CONFIG.page.margins_mm.get("bottom", 15.0)
-MARGIN_LEFT_MM = CONFIG.page.margins_mm.get("left", 20.0)
-MARGIN_RIGHT_MM = CONFIG.page.margins_mm.get("right", 20.0)
-MARGIN_HEADER_MM = CONFIG.page.margins_mm.get("header", 10.0)
-MARGIN_FOOTER_MM = CONFIG.page.margins_mm.get("footer", 10.0)
-PAGE_BORDER_OFFSET_MM = CONFIG.page.border_offset_mm
-
-# Table dimensions (from CONFIG.tables)
-TABLE_WIDTH_HWP = str(CONFIG.tables.width_hwp) if CONFIG.tables else "48189"
-TITLE_BODY_HEIGHT_HWP = "3174"  # TODO: move to config
-ONE_PT_HWP = str(int(round((25.4 / 72) * HWPUNITS_PER_MM)))
-TITLE_TABLE_ROW_HEIGHTS = (ONE_PT_HWP, TITLE_BODY_HEIGHT_HWP, ONE_PT_HWP)
-EMPH_TABLE_HEIGHT_HWP = "2632"
-
-# 행 높이 자동 계산 상수
-TABLE_LINE_HEIGHT_HWP = 1500    # 11pt 기준 1줄 높이 (줄간격 포함)
-TABLE_MIN_ROW_HEIGHT_HWP = 1800 # 최소 행 높이 (1줄 + 여백)
-TABLE_ROW_PADDING_HWP = 400     # 셀 상하 여백 (top+bottom)
-EMPH_TABLE_ROW_HEIGHT = "521"
-TITLE_TABLE_SPACER_CHAR_ID = "9"  # 1pt filler
-
-# Header/Footer 전용 스타일 ID (CONFIG.styles에서 동적 조회)
-def _get_header_footer_ids():
-    """머리말/꼬리말 스타일 ID를 CONFIG에서 가져온다."""
-    hdr = CONFIG.get_style("header")
-    ftr = CONFIG.get_style("footer")
-    return {
-        "header_para": str(hdr.para_pr_id) if hdr else "12",
-        "header_char": str(hdr.char_pr_id) if hdr else "10",
-        "header_style": str(hdr.style_id) if hdr else "12",
-        "footer_para": str(ftr.para_pr_id) if ftr else "13",
-        "footer_char": str(ftr.char_pr_id) if ftr else "10",
-        "footer_style": str(ftr.style_id) if ftr else "13",
-    }
-
-_HF_IDS = _get_header_footer_ids()
-HEADER_PARA_ID = _HF_IDS["header_para"]
-FOOTER_PARA_ID = _HF_IDS["footer_para"]
-HEADER_CHAR_ID = _HF_IDS["header_char"]
-FOOTER_CHAR_ID = _HF_IDS["footer_char"]
-HEADER_STYLE_ID = _HF_IDS["header_style"]
-FOOTER_STYLE_ID = _HF_IDS["footer_style"]
-
-# Table-specific style IDs (TODO: migrate to CONFIG.tables.styles)
-TABLE_TITLE_PARA_ID = "14"
-TABLE_HEADER_PARA_ID = "15"
-TABLE_BODY_PARA_ID = "16"
-SUMMARY_TABLE_PARA_ID = "17"   # 단일 셀 wrapper
-SUMMARY_BODY_PARA_ID = "18"
-SUMMARY_DESC_PARA_ID = "19"
-TABLE_TITLE_STYLE_ID = "14"
-TABLE_HEADER_STYLE_ID = "15"
-TABLE_BODY_STYLE_ID = "16"
-SUMMARY_BODY_STYLE_ID = "17"
-SUMMARY_DESC_STYLE_ID = "18"
-TABLE_BODY_CHAR_ID = "11"
-TABLE_HEADER_CHAR_ID = "12"
-
-# Dedicated borderFill IDs for non-standard tables
-# 실험 2: 순차적 ID 사용 (ID 개수 제한 가설 검증)
-TITLE_TABLE_SPACER_BORDER_ID = "34"   # 연보라 배경 + 테두리 NONE
-TITLE_TABLE_BODY_BORDER_ID = "35"     # 테두리 NONE, 배경 없음
-EMPH_TABLE_BORDER_ID = "36"           # 연두 배경 + SOLID 테두리
-SUMMARY_TABLE_BORDER_ID = "37"        # 점선 테두리
-PROCESS_STEP_BORDER_ID = "3"          # 실선 테두리 (프로세스 단계 셀)
-PROCESS_ARROW_BORDER_ID = "1"         # 테두리 없음 (화살표 셀)
-PROCESS_TITLE_BORDER_ID = "41"        # 038 스타일: 상단 제목행 (연회색 배경 + 실선)
-PROCESS_DESC_BORDER_ID = "42"         # 038 스타일: 하단 설명행 (흰 배경 + 실선, 상단선 없음)
-
-# Spacer paragraph mapping: CONFIG.spacers에서 동적 생성
-def _build_spacer_char_map():
-    """CONFIG.spacers에서 SPACER_CHAR_MAP 생성."""
-    block_to_yaml = {
-        BlockType.SUBTITLE: "subtitle",
-        BlockType.BODY: "body",
-        BlockType.DESC2: "desc2",
-        BlockType.DESC3: "desc3",
-    }
-    result = {}
-    for block_type, yaml_key in block_to_yaml.items():
-        spacer = CONFIG.spacers.get(yaml_key)
-        if spacer:
-            result[block_type] = str(spacer.char_pr_id)
-    return result
-
-SPACER_CHAR_MAP = _build_spacer_char_map()
-
-# Spacer marker text: ↕(size)↕ so later manual/auto replace is easy
-SPACER_MARKER_MAP = {
-    BlockType.SUBTITLE: " ",
-    BlockType.BODY: " ",
-    BlockType.DESC2: " ",
-    BlockType.DESC3: " ",
-}
+# ========================================================================
+# Module: preview_data
+# ========================================================================
 
 
 PREVIEW_PNG_BASE64 = (
@@ -638,467 +465,242 @@ PREVIEW_PNG_BASE64 = (
 PREVIEW_PNG_BYTES = base64.b64decode(PREVIEW_PNG_BASE64)
 
 
+# ========================================================================
+# Module: config
+# ========================================================================
+
+
+# Ensure project root is in sys.path
+
+
 # ---------------------------------------------------------------------------
-# Parsing `sample_input.md`-style markdown into blocks
+# Load style configuration (YAML-based)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_STYLE_PATH = Path(__file__).parent.parent / "templates" / "core_styles.yaml"
+
+
+def _load_config() -> StyleConfig:
+    """Load style configuration from YAML."""
+    if _DEFAULT_STYLE_PATH.exists():
+        return load_style_config(_DEFAULT_STYLE_PATH)
+    return StyleConfig(version="1.0", template_id="fallback", description="Hardcoded fallback")
+
+
+CONFIG: StyleConfig = _load_config()
+
+
+# ---------------------------------------------------------------------------
+# Style mapping layer (logical BlockType → paraPr/charPr IDs)
 # ---------------------------------------------------------------------------
 
 
-def parse_md_lines(lines: Iterable[str]) -> List[Block]:
-    def _normalize_line(raw: str) -> str:
-        # 탭 → 스페이스 치환 후 개행 제거
-        return raw.replace("\t", "    ").rstrip("\n")
+def _build_style_maps() -> tuple:
+    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성.
 
-    def _parse_table_block(idx: int, line_list: List[str]) -> tuple[TableBlock | None, int]:
-        """현재 인덱스에서 마크다운 표를 파싱한다. 다음 소비할 인덱스까지 반환."""
-
-        title_match = re.match(r"^<\s*표\s*제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
-        if not title_match:
-            return None, idx
-        title = title_match.group(1).strip()
-        table_lines: List[str] = []
-        j = idx + 1
-        # 제목 다음의 공백/빈 줄은 건너뛴다.
-        while j < len(line_list) and not line_list[j].strip():
-            j += 1
-        while j < len(line_list):
-            ln = line_list[j].rstrip("\n")
-            if ln.strip().startswith("|"):
-                table_lines.append(ln.strip())
-                j += 1
-                continue
-            # 표 블록이 끝났다고 판단
-            break
-
-        if len(table_lines) < 2:
-            return None, idx
-
-        def _split_row(row: str) -> List[str]:
-            cells = row.strip().strip("|").split("|")
-            return [c.strip() for c in cells]
-
-        header_cells = _split_row(table_lines[0])
-        align_cells = _split_row(table_lines[1])
-        body_rows = [_split_row(r) for r in table_lines[2:]]
-
-        def _parse_align(token: str) -> str:
-            token = token.strip()
-            if token.startswith(":") and token.endswith(":"):
-                return "CENTER"
-            if token.endswith(":"):
-                return "RIGHT"
-            if token.startswith(":"):
-                return "LEFT"
-            return "LEFT"
-
-        aligns = [_parse_align(a) for a in align_cells]
-        tbl = TableBlock(
-            type=BlockType.TABLE,
-            raw="\n".join([line_list[idx]] + table_lines),
-            text=title,
-            title=title,
-            header=header_cells,
-            aligns=aligns,
-            rows=body_rows,
-        )
-        return tbl, j
-
-    def _parse_summary_block(idx: int, line_list: List[str]) -> tuple[SummaryTableBlock | None, int]:
-        marker = line_list[idx].strip().replace(" ", "")
-        if marker not in ("<요약표시작>", "<요약표시작>"):
-            return None, idx
-        items: List[Block] = []
-        j = idx + 1
-        while j < len(line_list):
-            ln_original = _normalize_line(line_list[j])
-            ln = ln_original.lstrip(" ")
-            if ln.replace(" ", "") == "<요약표끝>":
-                j += 1
-                break
-            if not ln:
-                j += 1
-                continue
-            if ln.startswith("◦"):
-                text = ln[len("◦") :].strip()
-                items.append(Block(BlockType.BODY, ln_original, text))
-            elif ln.startswith("-"):
-                text = ln[len("-") :].strip()
-                items.append(Block(BlockType.DESC2, ln_original, text))
-            else:
-                # 요약표 내부의 기타 라인은 PLAIN으로 유지
-                items.append(Block(BlockType.PLAIN, ln_original, ln))
-            j += 1
-        summ = SummaryTableBlock(
-            type=BlockType.SUMMARY_TABLE,
-            raw="\n".join(line_list[idx:j]),
-            text="요약표",
-            items=items,
-        )
-        return summ, j
-
-    def _parse_process_block(idx: int, line_list: List[str]) -> tuple:
-        """<프로세스: 제목> ~ </프로세스> 블록을 파싱한다."""
-        proc_match = re.match(r"^<\s*프로세스\s*:\s*(.+?)>\s*$", line_list[idx].strip())
-        if not proc_match:
-            return None, idx
-        proc_title = proc_match.group(1).strip()
-        j = idx + 1
-        proc_rows = []  # [(steps_list, is_reversed), ...]
-        
-        while j < len(line_list):
-            ln = line_list[j].strip()
-            if ln.replace(" ", "") in ("</프로세스>", "</프로세스>"):
-                j += 1
-                break
-            if not ln or ln == "↓":
-                j += 1
-                continue
-            
-            # 방향 결정: ← 가 있으면 역방향
-            is_reversed = "←" in ln
-            
-            # 화살표로 분리
-            if is_reversed:
-                raw_steps = [s.strip() for s in re.split(r"\s*←\s*", ln) if s.strip()]
-            else:
-                raw_steps = [s.strip() for s in re.split(r"\s*→\s*", ln) if s.strip()]
-            
-            steps = []
-            for step in raw_steps:
-                # "단계명(담당자)" 형식 파싱
-                m = re.match(r"^(.+?)\((.+?)\)$", step)
-                if m:
-                    steps.append((m.group(1).strip(), m.group(2).strip()))
-                else:
-                    steps.append((step, ""))
-            
-            if steps:
-                proc_rows.append((steps, is_reversed))
-            j += 1
-        
-        if not proc_rows:
-            return None, idx
-        
-        block = ProcessBlock(
-            type=BlockType.PROCESS,
-            raw="\n".join(line_list[idx:j]),
-            text=proc_title,
-            proc_title=proc_title,
-            proc_rows=proc_rows,
-        )
-        return block, j
-
-    def _parse_diagram_block(idx: int, line_list: List[str]) -> tuple:
-        """<도식도: 제목> ~ </도식도> 블록을 파싱한다."""
-        diag_match = re.match(r"^<\s*도식도\s*:\s*(.+?)>\s*$", line_list[idx].strip())
-        if not diag_match:
-            return None, idx
-        diag_title = diag_match.group(1).strip()
-        j = idx + 1
-        layers = []       # [[DiagramBox, ...], ...]
-        connectors = []   # ['↓', '↔', ...]
-        current_layer = []
-
-        def _flush_layer():
-            nonlocal current_layer
-            if current_layer:
-                layers.append(current_layer)
-                current_layer = []
-
-        while j < len(line_list):
-            ln = line_list[j].strip()
-            if ln.replace(" ", "") in ("</도식도>", "</도식도>"):
-                j += 1
-                break
-            if not ln:
-                # 빈 줄 = 레이어 구분
-                _flush_layer()
-                j += 1
-                continue
-            if ln in ("↓", "↔"):
-                _flush_layer()
-                connectors.append(ln)
-                j += 1
-                continue
-
-            # [제목 | 내용1 | 내용2] 형식 파싱
-            box_match = re.match(r"^\[(.+)\]\s*$", ln)
-            if box_match:
-                content = box_match.group(1)
-                parts = [p.strip() for p in content.split("|")]
-                box_title = parts[0]
-                box_items = parts[1:] if len(parts) > 1 else []
-                current_layer.append(DiagramBox(title=box_title, items=box_items))
-            j += 1
-
-        _flush_layer()
-
-        if not layers:
-            return None, idx
-
-        block = DiagramBlock(
-            type=BlockType.DIAGRAM,
-            raw="\n".join(line_list[idx:j]),
-            text=diag_title,
-            diagram_title=diag_title,
-            layers=layers,
-            connectors=connectors,
-        )
-        return block, j
-
-    blocks: List[Block] = []
-    line_list = [_normalize_line(ln) for ln in lines]
-    i = 0
-    while i < len(line_list):
-        line = line_list[i]
-        stripped = line.lstrip(" ")
-        leading_spaces = len(line) - len(stripped)
-
-        # 마크다운 헤더 접두사 (###, ##, #) 제거 — 커스텀 마커가 인식되도록
-        stripped = re.sub(r'^#{1,6}\s+', '', stripped)
-
-        # 도식도
-        diagram_block, next_idx = _parse_diagram_block(i, line_list)
-        if diagram_block is not None:
-            blocks.append(diagram_block)
-            i = next_idx
-            continue
-
-        # 프로세스 흐름도
-        process_block, next_idx = _parse_process_block(i, line_list)
-        if process_block is not None:
-            blocks.append(process_block)
-            i = next_idx
-            continue
-
-        # 요약표
-        summary_block, next_idx = _parse_summary_block(i, line_list)
-        if summary_block is not None:
-            blocks.append(summary_block)
-            i = next_idx
-            continue
-
-        # 표
-        table_block, next_idx = _parse_table_block(i, line_list)
-        if table_block is not None:
-            blocks.append(table_block)
-            i = next_idx
-            continue
-
-        if not stripped:
-            blocks.append(Block(BlockType.PLAIN, line, ""))
-            i += 1
-            continue
-
-        if stripped.startswith("<주제목>"):
-            text = stripped[len("<주제목>") :].strip()
-            if not text and i + 1 < len(line_list):
-                text = line_list[i + 1].strip()
-                i += 1
-            blocks.append(Block(BlockType.TITLE, line, text))
-            i += 1
-            continue
-
-        if stripped.startswith("<강조>"):
-            text = stripped[len("<강조>") :].strip()
-            if not text and i + 1 < len(line_list):
-                text = line_list[i + 1].strip()
-                i += 1
-            blocks.append(Block(BlockType.EMPHASIS, line, text))
-            i += 1
-            continue
-
-        if stripped.startswith("□"):
-            text = stripped[len("□") :].strip()
-            blocks.append(Block(BlockType.SUBTITLE, line, text))
-            i += 1
-            continue
-
-        if stripped.startswith(("◦", "•", "∙", "·")):
-            text = stripped[len("◦") :].strip()
-            blocks.append(Block(BlockType.BODY, line, text))
-            i += 1
-            continue
-
-        if stripped.startswith(("-", "–", "—")) and leading_spaces <= 3:
-            text = stripped[len(stripped[0]) :].strip()
-            blocks.append(Block(BlockType.DESC2, line, text))
-            i += 1
-            continue
-
-        if stripped.startswith(("*", "●")) and leading_spaces <= 4:
-            text = stripped[len(stripped[0]) :].strip()
-            blocks.append(Block(BlockType.DESC3, line, text))
-            i += 1
-            continue
-
-        blocks.append(Block(BlockType.PLAIN, line, stripped))
-        i += 1
-
-    return blocks
-
-
-BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
-
-
-def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
-    segments: List[tuple[str, bool]] = []
-    last = 0
-    for match in BOLD_PATTERN.finditer(text):
-        start, end = match.span()
-        if start > last:
-            segments.append((text[last:start], False))
-        segments.append((match.group(1), True))
-        last = end
-    if last < len(text):
-        segments.append((text[last:], False))
-    if not segments and text:
-        segments.append((text, False))
-    return segments
-
-
-def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full_text: str) -> None:
-    _append_text_with_bold_custom(paragraph, base_char_id, full_text, INLINE_BOLD_CHAR_ID)
-
-
-def _append_text_with_bold_custom(
-    paragraph: ET.Element, base_char_id: str | None, full_text: str, bold_char_id: str
-) -> None:
-    if full_text is None:
-        return
-    if not full_text:
-        return
-    segments = _split_bold_segments(full_text)
-    if not segments:
-        segments = [(full_text, False)]
-    for seg_text, is_bold in segments:
-        if not seg_text:
-            continue
-        run_attrs = {}
-        if is_bold:
-            run_attrs["charPrIDRef"] = bold_char_id
-        elif base_char_id is not None:
-            run_attrs["charPrIDRef"] = base_char_id
-        run = ET.SubElement(paragraph, _q("hp", "run"), run_attrs)
-        t = ET.SubElement(run, _q("hp", "t"))
-        t.text = seg_text
-
-
-def _strip_bold_markup(text: str) -> str:
-    if not text:
-        return ""
-    return BOLD_PATTERN.sub(lambda match: match.group(1), text)
-
-
-def _format_block_preview_text(block: Block) -> Optional[str]:
-    if not block.text:
-        return None
-    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.PROCESS, BlockType.DIAGRAM):
-        return None
-    if block.type == BlockType.TITLE:
-        return None
-    cleaned = _strip_bold_markup(block.text).strip()
-    if not cleaned:
-        return None
-    if block.type == BlockType.SUBTITLE:
-        return f"□ {cleaned}"
-    if block.type == BlockType.BODY:
-        return f" ◦ {cleaned}"
-    if block.type == BlockType.DESC2:
-        return f"   - {cleaned}"
-    if block.type == BlockType.DESC3:
-        return f"    * {cleaned}"
-    if block.type == BlockType.EMPHASIS:
-        return f"◈ {cleaned}"
-    return cleaned
-
-
-def _build_preview_text(blocks: List[Block], title: str) -> str:
-    safe_title = title.strip() or "Untitled"
-    lines = ["< >", f"<{safe_title}>", "< >", ""]
-    for block in blocks:
-        preview_line = _format_block_preview_text(block)
-        if preview_line is None:
-            continue
-        lines.append(preview_line)
-        lines.append("")
-    preview = "\n".join(lines).rstrip()
-    if not preview.endswith("\n"):
-        preview += "\n"
-    return preview
-
-
-KOREAN_WEEKDAY_NAMES = [
-    "월요일",
-    "화요일",
-    "수요일",
-    "목요일",
-    "금요일",
-    "토요일",
-    "일요일",
-]
-
-
-def _format_localized_datetime(local_dt: datetime) -> str:
-    weekday = KOREAN_WEEKDAY_NAMES[local_dt.weekday()]
-    ampm = "오전" if local_dt.hour < 12 else "오후"
-    hour12 = local_dt.hour % 12 or 12
-    return (
-        f"{local_dt.year}년 {local_dt.month:02d}월 {local_dt.day:02d}일 "
-        f"{weekday} {ampm} {hour12}:{local_dt.minute:02d}:{local_dt.second:02d}"
-    )
-
-
-def _isoformat_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _safe_get_username() -> str:
-    try:
-        return getpass.getuser()
-    except Exception:
-        return "auto"
-
-
-def _extract_doc_title(blocks: List[Block]) -> str:
-    for block in blocks:
-        if block.type == BlockType.TITLE and block.text.strip():
-            return _strip_bold_markup(block.text).strip()
-    for block in blocks:
-        if block.text.strip():
-            return _strip_bold_markup(block.text).strip()
-    return "Untitled"
-
-
-def _build_header_footer_text(meta: DocumentMetadata) -> tuple[str, str]:
-    """머리말/꼬리말에 넣을 기본 문자열을 구성한다.
-
-    - 머리말: 스타일북의 예시 문구를 그대로 사용하되, 제목 자리에 실제 문서 제목 삽입.
-    - 꼬리말: MD에 정의가 없으면 빈 문자열 (현재는 MD 파싱에서 가져오지 않음)
+    **스타일 통일 전략**:
+    일반 텍스트 문단(SUBTITLE, BODY, DESC2, DESC3, PLAIN)은 모두 BODY의
+    styleIDRef / paraPrIDRef를 공유한다.
+    TITLE과 EMPHASIS는 표 안에서 렌더링되므로 별도 styleIDRef 유지 가능.
+    시각적 차이(폰트, 크기)는 charPrIDRef(run 레벨)로만 제어한다.
     """
+    block_to_yaml = {
+        BlockType.TITLE: "title",
+        BlockType.SUBTITLE: "subtitle",
+        BlockType.BODY: "body",
+        BlockType.DESC2: "desc2",
+        BlockType.DESC3: "desc3",
+        BlockType.EMPHASIS: "emphasis",
+        BlockType.PLAIN: "plain",
+    }
 
-    title = meta.title.strip() or "Untitled"
-    header_text = f"추진단 자료 스타일 보고서 - {title}"
-    # 꼬리말: MD에 없으므로 빈 문자열
-    footer_text = ""
-    return header_text, footer_text
+    para_map = {}
+    char_map = {}
+    style_map = {}
+
+    for block_type, yaml_key in block_to_yaml.items():
+        style = CONFIG.get_style(yaml_key)
+        if style:
+            para_map[block_type] = str(style.para_pr_id)
+            char_map[block_type] = str(style.char_pr_id)
+            style_map[block_type] = str(style.style_id)
+        else:
+            para_map[block_type] = "0"
+            char_map[block_type] = "0"
+            style_map[block_type] = "0"
+
+    # 스타일 통일: 일반 텍스트 문단은 BODY 기준으로 통일
+    body_style = CONFIG.get_style("body")
+    if body_style:
+        unified_style_id = str(body_style.style_id)
+        unified_para_id = str(body_style.para_pr_id)
+        for bt in (BlockType.SUBTITLE, BlockType.BODY, BlockType.DESC2,
+                    BlockType.DESC3, BlockType.PLAIN):
+            style_map[bt] = unified_style_id
+            para_map[bt] = unified_para_id
+
+    return para_map, char_map, style_map
 
 
-def _build_document_metadata(blocks: List[Block]) -> DocumentMetadata:
-    title = _extract_doc_title(blocks)
-    user = _safe_get_username()
-    now_utc = datetime.now(timezone.utc)
-    local = now_utc.astimezone()
-    return DocumentMetadata(
-        title=title,
-        creator=user,
-        subject=title,
-        description=title,
-        last_saved_by=user,
-        keyword=title,
-        created_at=now_utc,
-        modified_at=now_utc,
-        display_date=_format_localized_datetime(local),
-    )
+PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
+
+INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
+
+
+# ---------------------------------------------------------------------------
+# Config-driven constants
+# ---------------------------------------------------------------------------
+
+HWPUNITS_PER_MM = CONFIG.hwp_per_mm
+
+# Page dimensions
+PAGE_WIDTH_MM = CONFIG.page.width_mm
+PAGE_HEIGHT_MM = CONFIG.page.height_mm
+PAGE_WIDTH_HWP = str(CONFIG.page.width_hwp)
+PAGE_HEIGHT_HWP = str(CONFIG.page.height_hwp)
+
+# Page margins
+MARGIN_TOP_MM = CONFIG.page.margins_mm.get("top", 15.0)
+MARGIN_BOTTOM_MM = CONFIG.page.margins_mm.get("bottom", 15.0)
+MARGIN_LEFT_MM = CONFIG.page.margins_mm.get("left", 20.0)
+MARGIN_RIGHT_MM = CONFIG.page.margins_mm.get("right", 20.0)
+MARGIN_HEADER_MM = CONFIG.page.margins_mm.get("header", 10.0)
+MARGIN_FOOTER_MM = CONFIG.page.margins_mm.get("footer", 10.0)
+PAGE_BORDER_OFFSET_MM = CONFIG.page.border_offset_mm
+
+# Table dimensions
+TABLE_WIDTH_HWP = str(CONFIG.tables.width_hwp) if CONFIG.tables else "48189"
+TITLE_BODY_HEIGHT_HWP = "3174"
+ONE_PT_HWP = str(int(round((25.4 / 72) * HWPUNITS_PER_MM)))
+TITLE_TABLE_ROW_HEIGHTS = (ONE_PT_HWP, TITLE_BODY_HEIGHT_HWP, ONE_PT_HWP)
+EMPH_TABLE_HEIGHT_HWP = "2632"
+
+# 행 높이 자동 계산 상수
+TABLE_LINE_HEIGHT_HWP = 1500
+TABLE_MIN_ROW_HEIGHT_HWP = 1800
+TABLE_ROW_PADDING_HWP = 400
+EMPH_TABLE_ROW_HEIGHT = "521"
+TITLE_TABLE_SPACER_CHAR_ID = "9"
+
+# Header/Footer 전용 스타일 ID
+def _get_header_footer_ids():
+    """머리말/꼬리말 스타일 ID를 CONFIG에서 가져온다."""
+    hdr = CONFIG.get_style("header")
+    ftr = CONFIG.get_style("footer")
+    return {
+        "header_para": str(hdr.para_pr_id) if hdr else "12",
+        "header_char": str(hdr.char_pr_id) if hdr else "10",
+        "header_style": str(hdr.style_id) if hdr else "12",
+        "footer_para": str(ftr.para_pr_id) if ftr else "13",
+        "footer_char": str(ftr.char_pr_id) if ftr else "10",
+        "footer_style": str(ftr.style_id) if ftr else "13",
+    }
+
+_HF_IDS = _get_header_footer_ids()
+HEADER_PARA_ID = _HF_IDS["header_para"]
+FOOTER_PARA_ID = _HF_IDS["footer_para"]
+HEADER_CHAR_ID = _HF_IDS["header_char"]
+FOOTER_CHAR_ID = _HF_IDS["footer_char"]
+HEADER_STYLE_ID = _HF_IDS["header_style"]
+FOOTER_STYLE_ID = _HF_IDS["footer_style"]
+
+# Table-specific style IDs
+TABLE_TITLE_PARA_ID = "14"
+TABLE_HEADER_PARA_ID = "15"
+TABLE_BODY_PARA_ID = "16"
+SUMMARY_TABLE_PARA_ID = "17"
+SUMMARY_BODY_PARA_ID = "18"
+SUMMARY_DESC_PARA_ID = "19"
+TABLE_TITLE_STYLE_ID = "14"
+TABLE_HEADER_STYLE_ID = "15"
+TABLE_BODY_STYLE_ID = "16"
+SUMMARY_BODY_STYLE_ID = "17"
+SUMMARY_DESC_STYLE_ID = "18"
+TABLE_BODY_CHAR_ID = "11"
+TABLE_HEADER_CHAR_ID = "12"
+
+# Dedicated borderFill IDs
+TITLE_TABLE_SPACER_BORDER_ID = "34"
+TITLE_TABLE_BODY_BORDER_ID = "35"
+EMPH_TABLE_BORDER_ID = "36"
+SUMMARY_TABLE_BORDER_ID = "37"
+PROCESS_STEP_BORDER_ID = "3"
+PROCESS_ARROW_BORDER_ID = "1"
+PROCESS_TITLE_BORDER_ID = "41"
+PROCESS_DESC_BORDER_ID = "42"
+
+# Spacer paragraph mapping
+def _build_spacer_char_map():
+    """CONFIG.spacers에서 SPACER_CHAR_MAP 생성."""
+    block_to_yaml = {
+        BlockType.SUBTITLE: "subtitle",
+        BlockType.BODY: "body",
+        BlockType.DESC2: "desc2",
+        BlockType.DESC3: "desc3",
+    }
+    result = {}
+    for block_type, yaml_key in block_to_yaml.items():
+        spacer = CONFIG.spacers.get(yaml_key)
+        if spacer:
+            result[block_type] = str(spacer.char_pr_id)
+    return result
+
+SPACER_CHAR_MAP = _build_spacer_char_map()
+
+SPACER_MARKER_MAP = {
+    BlockType.SUBTITLE: " ",
+    BlockType.BODY: " ",
+    BlockType.DESC2: " ",
+    BlockType.DESC3: " ",
+}
+
+
+# ---------------------------------------------------------------------------
+# XML Namespaces + _q helper
+# ---------------------------------------------------------------------------
+
+NS = {
+    "ha": "http://www.hancom.co.kr/hwpml/2011/app",
+    "hp": "http://www.hancom.co.kr/hwpml/2011/paragraph",
+    "hp10": "http://www.hancom.co.kr/hwpml/2016/paragraph",
+    "hs": "http://www.hancom.co.kr/hwpml/2011/section",
+    "hc": "http://www.hancom.co.kr/hwpml/2011/core",
+    "hh": "http://www.hancom.co.kr/hwpml/2011/head",
+    "hhs": "http://www.hancom.co.kr/hwpml/2011/history",
+    "hm": "http://www.hancom.co.kr/hwpml/2011/master-page",
+    "hpf": "http://www.hancom.co.kr/schema/2011/hpf",
+    "hwpunitchar": "http://www.hancom.co.kr/hwpml/2016/HwpUnitChar",
+    "ooxmlchart": "http://www.hancom.co.kr/hwpml/2016/ooxmlchart",
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "opf": "http://www.idpf.org/2007/opf/",
+    "epub": "http://www.idpf.org/2007/ops",
+    "config": "urn:oasis:names:tc:opendocument:xmlns:config:1.0",
+    "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "pkg": "http://www.hancom.co.kr/hwpml/2016/meta/pkg#",
+}
+
+# Register all namespace prefixes
+for prefix, uri in NS.items():
+    ET.register_namespace(prefix, uri)
+
+ET.register_namespace("hv", "http://www.hancom.co.kr/hwpml/2011/version")
+ET.register_namespace("odf", "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0")
+
+
+def _q(prefix: str, tag: str) -> str:
+    """Qualified tag helper: _q("hp", "p") → '{ns}p'."""
+    return f"{{{NS[prefix]}}}{tag}"
+
+
+def mm_to_hwp(mm: float) -> str:
+    """Convert millimeters to Hangul internal HWPUNIT."""
+    return str(int(mm * HWPUNITS_PER_MM))
+
+
+# ---------------------------------------------------------------------------
+# Section properties (secPr) — used by renderers and xml_builder
+# ---------------------------------------------------------------------------
 
 
 def _attach_secpr(run: ET.Element) -> None:
@@ -1241,164 +843,361 @@ def _attach_secpr(run: ET.Element) -> None:
     )
 
 
-def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: str) -> None:
-    """Tier1 샘플 패턴을 따르는 머리말/꼬리말 컨트롤을 추가한다.
+# ========================================================================
+# Module: inline
+# ========================================================================
 
-    - 머리말: 첫 번째 문단(`id="0"`) 안, 제목 테이블(run) 바로 뒤에 header ctrl 삽입.
-    - 꼬리말: 첫 번째 SUBTITLE 문단 안, 선행 run 으로 footer ctrl 삽입.
-    - 둘 다 오른쪽 정렬 스타일을 사용한다.
 
-    섹션 구조가 예상과 다를 경우에는 조용히 건너뛰도록 방어적으로 동작한다.
+# ---------------------------------------------------------------------------
+# Bold 패턴 및 세그먼트 분리
+# ---------------------------------------------------------------------------
+
+BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
+    segments: List[tuple[str, bool]] = []
+    last = 0
+    for match in BOLD_PATTERN.finditer(text):
+        start, end = match.span()
+        if start > last:
+            segments.append((text[last:start], False))
+        segments.append((match.group(1), True))
+        last = end
+    if last < len(text):
+        segments.append((text[last:], False))
+    if not segments and text:
+        segments.append((text, False))
+    return segments
+
+
+def _strip_bold_markup(text: str) -> str:
+    if not text:
+        return ""
+    return BOLD_PATTERN.sub(lambda match: match.group(1), text)
+
+
+# ---------------------------------------------------------------------------
+# XML run 생성 (Bold 지원)
+# ---------------------------------------------------------------------------
+
+
+def _append_text_with_bold(
+    paragraph: ET.Element, base_char_id: str | None, full_text: str
+) -> None:
+    _append_text_with_bold_custom(paragraph, base_char_id, full_text, INLINE_BOLD_CHAR_ID)
+
+
+def _append_text_with_bold_custom(
+    paragraph: ET.Element, base_char_id: str | None, full_text: str, bold_char_id: str
+) -> None:
+    if full_text is None:
+        return
+    if not full_text:
+        return
+    segments = _split_bold_segments(full_text)
+    if not segments:
+        segments = [(full_text, False)]
+    for seg_text, is_bold in segments:
+        if not seg_text:
+            continue
+        run_attrs = {}
+        if is_bold:
+            run_attrs["charPrIDRef"] = bold_char_id
+        elif base_char_id is not None:
+            run_attrs["charPrIDRef"] = base_char_id
+        run = ET.SubElement(paragraph, _q("hp", "run"), run_attrs)
+        t = ET.SubElement(run, _q("hp", "t"))
+        t.text = seg_text
+
+
+# ---------------------------------------------------------------------------
+# 미리보기 텍스트 생성
+# ---------------------------------------------------------------------------
+
+
+def _format_block_preview_text(block: Block) -> Optional[str]:
+    if not block.text:
+        return None
+    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.PROCESS, BlockType.DIAGRAM):
+        return None
+    if block.type == BlockType.TITLE:
+        return None
+    cleaned = _strip_bold_markup(block.text).strip()
+    if not cleaned:
+        return None
+    if block.type == BlockType.SUBTITLE:
+        return f"□ {cleaned}"
+    if block.type == BlockType.BODY:
+        return f" ◦ {cleaned}"
+    if block.type == BlockType.DESC2:
+        return f"   - {cleaned}"
+    if block.type == BlockType.DESC3:
+        return f"    * {cleaned}"
+    if block.type == BlockType.EMPHASIS:
+        return f"◈ {cleaned}"
+    return cleaned
+
+
+def _build_preview_text(blocks: List[Block], title: str) -> str:
+    safe_title = title.strip() or "Untitled"
+    lines = ["< >", f"<{safe_title}>", "< >", ""]
+    for block in blocks:
+        preview_line = _format_block_preview_text(block)
+        if preview_line is None:
+            continue
+        lines.append(preview_line)
+        lines.append("")
+    preview = "\n".join(lines).rstrip()
+    if not preview.endswith("\n"):
+        preview += "\n"
+    return preview
+
+
+# ========================================================================
+# Module: text_fitting
+# ========================================================================
+
+
+import math
+
+
+# ---------------------------------------------------------------------------
+# 자간/폰트 변형용 charPr ID 매핑
+# ---------------------------------------------------------------------------
+
+# (font_size_pt, spacing_pct) → charPr ID
+TABLE_FIT_CHAR_IDS: dict[tuple[int, int], str] = {
+    (11, 0):   "11",   # 기존 표 본문
+    (11, -5):  "14",
+    (11, -10): "15",
+    (11, -15): "16",
+    (11, -20): "17",
+    (10, 0):   "18",
+    (10, -5):  "19",
+    (10, -10): "20",
+    (10, -15): "21",
+    (10, -20): "22",
+}
+
+# Bold 버전 (헤더용)
+TABLE_FIT_BOLD_CHAR_IDS: dict[tuple[int, int], str] = {
+    (11, 0):   "12",   # 기존 표 헤더
+    (11, -5):  "23",
+    (11, -10): "24",
+    (11, -15): "25",
+    (11, -20): "26",
+    (10, 0):   "27",
+    (10, -5):  "28",
+    (10, -10): "29",
+    (10, -15): "30",
+    (10, -20): "31",
+}
+
+# 피팅 시도 순서: (font_size, spacing) — 자간 먼저 줄이고, 그 다음 폰트 축소
+FIT_CANDIDATES: list[tuple[int, int]] = [
+    (11, 0), (11, -5), (11, -10), (11, -15), (11, -20),
+    (10, 0), (10, -5), (10, -10), (10, -15), (10, -20),
+]
+
+
+# ---------------------------------------------------------------------------
+# 시각적 너비 측정
+# ---------------------------------------------------------------------------
+
+
+def _visual_text_width(text: str) -> float:
+    """텍스트의 시각적 너비를 추정한다.
+
+    한글/CJK 문자는 가중치 2.0, ASCII/영숫자는 1.0으로 계산하여
+    실제 화면에서 차지하는 폭 비율을 근사한다.
+    **bold** 마크업은 제거 후 측정한다.
     """
+    # bold 마크업 제거
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    width = 0.0
+    for ch in clean:
+        cp = ord(ch)
+        # CJK Unified Ideographs, Hangul Syllables, Fullwidth forms, etc.
+        if (
+            (0xAC00 <= cp <= 0xD7AF)       # 한글 완성형
+            or (0x1100 <= cp <= 0x11FF)     # 한글 자모
+            or (0x3130 <= cp <= 0x318F)     # 한글 호환 자모
+            or (0x4E00 <= cp <= 0x9FFF)     # CJK 한자
+            or (0xFF01 <= cp <= 0xFF60)     # Fullwidth Latin
+            or (0x3000 <= cp <= 0x303F)     # CJK Symbols
+        ):
+            width += 2.0
+        else:
+            width += 1.0
+    return width
 
-    # 1) Header: p id="0" 안의 테이블(run) 뒤에 header ctrl 주입
-    first_p = None
-    for p in root.findall(_q("hp", "p")):
-        first_p = p
-        break
 
-    if first_p is not None:
-        # 제목 테이블을 담고 있는 run 찾기
-        header_run = None
-        for run in first_p.findall(_q("hp", "run")):
-            tbl = run.find(_q("hp", "tbl"))
-            if tbl is not None:
-                header_run = run
-                break
+def _estimate_line_count(
+    text: str,
+    cell_width_hwp: int,
+    font_size_pt: int,
+    spacing_pct: int,
+) -> float:
+    """주어진 셀 폭·폰트·자간에서 텍스트가 차지할 줄 수를 근사한다.
 
-        if header_run is not None:
-            header_ctrl = ET.SubElement(header_run, _q("hp", "ctrl"))
-            header_elem = ET.SubElement(
-                header_ctrl,
-                _q("hp", "header"),
-                {
-                    "id": "1",
-                    "applyPageType": "BOTH",
-                },
-            )
-            header_sublist = ET.SubElement(
-                header_elem,
-                _q("hp", "subList"),
-                {
-                    "id": "",
-                    "textDirection": "HORIZONTAL",
-                    "lineWrap": "BREAK",
-                    "vertAlign": "TOP",
-                    "linkListIDRef": "0",
-                    "linkListNextIDRef": "0",
-                    "textWidth": TABLE_WIDTH_HWP,
-                    "textHeight": "2834",
-                    "hasTextRef": "0",
-                    "hasNumRef": "0",
-                },
-            )
-            # Tier1 샘플과 동일한 오른쪽 정렬 스타일을 사용한다.
-            # (샘플 기준: paraPrIDRef="8", styleIDRef="0")
-            header_p = ET.SubElement(
-                header_sublist,
-                _q("hp", "p"),
-                {
-                    "id": "0",
-                    "paraPrIDRef": HEADER_PARA_ID,
-                    "styleIDRef": HEADER_STYLE_ID,
-                    "pageBreak": "0",
-                    "columnBreak": "0",
-                    "merged": "0",
-                },
-            )
-            header_run_inner = ET.SubElement(
-                header_p,
-                _q("hp", "run"),
-                {"charPrIDRef": HEADER_CHAR_ID},
-            )
-            # 오른쪽 정렬 시 샘플처럼 앞에 탭을 하나 두어 위치를 맞춘다.
-            t = ET.SubElement(header_run_inner, _q("hp", "t"))
-            # 탭 요소는 단순 오른쪽 정렬용이므로 상수값 사용
-            t.text = ""
-            tab = ET.SubElement(
-                t,
-                _q("hp", "tab"),
-                {
-                    "width": "39188",
-                    "leader": "0",
-                    "type": "2",
-                },
-            )
-            # 실제 텍스트는 탭 뒤에 이어붙이기
-            t.tail = header_text
+    근사 방법:
+      - 글자 1자의 폭 ≈ font_size(pt) × HWPUNIT_PER_PT
+      - 한글은 정방형(가로=세로), ASCII는 절반
+      - spacing_pct 적용 시 글자 간격이 비례 축소
+      - 셀 여백 (좌510 + 우510 = 1020 HWPUNIT) 차감
+    """
+    HWPUNIT_PER_PT = 100  # charPr height 기준: 1pt = 100 HWPUNIT
+    char_base_width = font_size_pt * HWPUNIT_PER_PT  # 한글 1자 기본 폭
 
-    # 2) Footer: 첫 번째 SUBTITLE 문단 안에 footer ctrl run을 prepend
-    #    스타일 통일 후 paraPrIDRef로 구분 불가 → run의 charPrIDRef로 식별
-    subtitle_char_id = RUN_CHAR_OVERRIDE_MAP[BlockType.SUBTITLE]
-    first_subtitle_p = None
-    for p in root.findall(_q("hp", "p")):
-        for run_el in p.findall(_q("hp", "run")):
-            if run_el.get("charPrIDRef") == subtitle_char_id:
-                first_subtitle_p = p
-                break
-        if first_subtitle_p is not None:
+    # 자간 적용: spacing_pct는 글자폭 대비 %로, 음수면 좁아짐
+    # ex) -20% → 각 자간이 0.2 * char_width만큼 줄어듦
+    # 실효 글자폭 = char_width × (1 + spacing_pct/100)
+    spacing_factor = 1.0 + spacing_pct / 100.0
+
+    # 셀 여백 차감
+    usable_width = cell_width_hwp - 1020  # 좌510 + 우510
+    if usable_width <= 0:
+        return 999.0
+
+    # bold 마크업 제거 후 글자별 폭 합산
+    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    total_text_width = 0.0
+    for ch in clean:
+        cp = ord(ch)
+        if (
+            (0xAC00 <= cp <= 0xD7AF)
+            or (0x1100 <= cp <= 0x11FF)
+            or (0x3130 <= cp <= 0x318F)
+            or (0x4E00 <= cp <= 0x9FFF)
+            or (0xFF01 <= cp <= 0xFF60)
+            or (0x3000 <= cp <= 0x303F)
+        ):
+            total_text_width += char_base_width * spacing_factor
+        else:
+            total_text_width += (char_base_width * 0.5) * spacing_factor
+
+    if total_text_width <= 0:
+        return 0.0
+
+    return math.ceil(total_text_width / usable_width)
+
+
+def _fit_cell_text(
+    text: str,
+    cell_width_hwp: int,
+    *,
+    is_header: bool = False,
+) -> tuple[int, int]:
+    """셀 텍스트에 대해 최적 (font_size, spacing) 조합을 결정한다.
+
+    전략:
+      1. 11pt spacing=0으로 시작 → 2줄 이하면 바로 채택
+      2. 3줄 이상이면 spacing을 -5%씩 줄여서 줄 수가 줄어드는 지점 탐색
+      3. -20%까지 해도 개선 안 되면 10pt로 넘어감
+      4. 최소 줄 수를 달성하는 조합을 반환
+
+    Returns:
+        (font_size_pt, spacing_pct) 튜플
+    """
+    if not text or not text.strip():
+        return (11, 0)
+
+    best = (11, 0)
+    best_lines = _estimate_line_count(text, cell_width_hwp, 11, 0)
+
+    # 이미 2줄 이하면 조정 불필요
+    if best_lines <= 2:
+        return best
+
+    for font_pt, spacing in FIT_CANDIDATES[1:]:  # (11,0) 이미 체크함
+        lines = _estimate_line_count(text, cell_width_hwp, font_pt, spacing)
+        if lines < best_lines:
+            best_lines = lines
+            best = (font_pt, spacing)
+        # 2줄 이하 달성하면 즉시 채택
+        if best_lines <= 2:
             break
 
-    if first_subtitle_p is not None:
-        # 기존 run 들 앞에 footer ctrl run 을 하나 삽입
-        footer_run = ET.Element(
-            _q("hp", "run"),
-            {"charPrIDRef": FOOTER_CHAR_ID},
-        )
-        footer_ctrl = ET.SubElement(footer_run, _q("hp", "ctrl"))
-        footer_elem = ET.SubElement(
-            footer_ctrl,
-            _q("hp", "footer"),
-            {
-                "id": "3",
-                "applyPageType": "BOTH",
-            },
-        )
-        footer_sublist = ET.SubElement(
-            footer_elem,
-            _q("hp", "subList"),
-            {
-                "id": "",
-                "textDirection": "HORIZONTAL",
-                "lineWrap": "BREAK",
-                "vertAlign": "BOTTOM",
-                "linkListIDRef": "0",
-                "linkListNextIDRef": "0",
-                "textWidth": TABLE_WIDTH_HWP,
-                "textHeight": "2834",
-                "hasTextRef": "0",
-                "hasNumRef": "0",
-            },
-        )
-        # Tier1 샘플과 동일한 꼬리말용 paraPr/스타일을 사용한다.
-        # (샘플 기준: paraPrIDRef="9", styleIDRef="0")
-        footer_p = ET.SubElement(
-            footer_sublist,
-            _q("hp", "p"),
-            {
-                "id": "0",
-                "paraPrIDRef": FOOTER_PARA_ID,
-                "styleIDRef": FOOTER_STYLE_ID,
-                "pageBreak": "0",
-                "columnBreak": "0",
-                "merged": "0",
-            },
-        )
-        footer_run_inner = ET.SubElement(
-            footer_p,
-            _q("hp", "run"),
-            {"charPrIDRef": FOOTER_CHAR_ID},
-        )
-        t_footer = ET.SubElement(footer_run_inner, _q("hp", "t"))
-        t_footer.text = footer_text
+    return best
 
-        # 새 run 을 첫 child 로 삽입
-        existing = list(first_subtitle_p)
-        for child in existing:
-            first_subtitle_p.remove(child)
-        first_subtitle_p.append(footer_run)
-        for child in existing:
-            first_subtitle_p.append(child)
+
+def _compute_col_widths(
+    header: List[str],
+    rows: List[List[str]],
+    col_cnt: int,
+    total_width: int,
+    *,
+    min_ratio: float = 0.12,
+) -> List[int]:
+    """헤더 + 본문 콘텐츠를 분석하여 최적 열 너비(HWPUNIT)를 반환한다.
+
+    알고리즘:
+      1. 각 열에 대해 (헤더 + 모든 행)의 최대 시각적 너비를 측정
+      2. 최대 너비 비율에 따라 total_width를 배분
+      3. 각 열은 최소 min_ratio(기본 12%) 이상의 폭을 보장
+      4. 나머지 1 HWPUNIT은 마지막 열에 보정
+
+    Returns:
+        각 열의 너비 리스트 (HWPUNIT, 합계 = total_width)
+    """
+    # 1) 열별 최대 시각적 너비 수집
+    max_widths = [0.0] * col_cnt
+    # 헤더
+    for col_idx in range(col_cnt):
+        if col_idx < len(header):
+            max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(header[col_idx]))
+    # 본문 행
+    for row in rows:
+        for col_idx in range(col_cnt):
+            if col_idx < len(row):
+                max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(row[col_idx]))
+
+    # 2) 모든 열의 너비가 0이면 균등 분할 fallback
+    total_visual = sum(max_widths)
+    if total_visual == 0:
+        base = total_width // col_cnt
+        widths = [base] * col_cnt
+        widths[-1] += total_width - base * col_cnt
+        return widths
+
+    # 3) 최소 비율 적용하여 비율 계산
+    min_width_hwp = int(total_width * min_ratio)
+    ratios = [w / total_visual for w in max_widths]
+
+    # 최소 비율 미달 열에 대해 floor 적용 후 나머지 재배분
+    locked = [False] * col_cnt
+    locked_sum = 0.0
+    for i in range(col_cnt):
+        if ratios[i] < min_ratio:
+            locked[i] = True
+            locked_sum += min_ratio
+
+    remaining_ratio = 1.0 - locked_sum
+    unlocked_visual = sum(max_widths[i] for i in range(col_cnt) if not locked[i])
+
+    final_ratios = [0.0] * col_cnt
+    for i in range(col_cnt):
+        if locked[i]:
+            final_ratios[i] = min_ratio
+        elif unlocked_visual > 0:
+            final_ratios[i] = (max_widths[i] / unlocked_visual) * remaining_ratio
+        else:
+            final_ratios[i] = remaining_ratio / max(1, sum(1 for x in locked if not x))
+
+    # 4) HWPUNIT으로 변환
+    widths = [max(min_width_hwp, int(total_width * r)) for r in final_ratios]
+
+    # 5) 합계 보정 (반올림 오차 → 마지막 열에서 조정)
+    diff = total_width - sum(widths)
+    widths[-1] += diff
+
+    return widths
+
+
+# ========================================================================
+# Module: tables
+# ========================================================================
 
 
 def _create_table_row(
@@ -1663,238 +1462,6 @@ def _append_emphasis_table(
         secpr_attached=secpr_attached,
     )
     return p_id, table_id + 1, secpr_attached
-
-
-# ---------------------------------------------------------------------------
-# 콘텐츠 기반 열 너비 자동 계산 + 텍스트 피팅
-# ---------------------------------------------------------------------------
-
-# 자간/폰트 변형용 charPr ID 매핑
-# (font_size_pt, spacing_pct) → charPr ID
-# 기본: 11=표본문(11pt,0%), 12=표헤더(11pt,Bold,0%)
-# 추가로 header.xml에 등록되는 변형 charPr
-TABLE_FIT_CHAR_IDS: dict[tuple[int, int], str] = {
-    # (font_pt, spacing_%) → charPr ID
-    (11, 0):   "11",   # 기존 표 본문
-    (11, -5):  "14",
-    (11, -10): "15",
-    (11, -15): "16",
-    (11, -20): "17",
-    (10, 0):   "18",
-    (10, -5):  "19",
-    (10, -10): "20",
-    (10, -15): "21",
-    (10, -20): "22",
-}
-# Bold 버전 (헤더용)
-TABLE_FIT_BOLD_CHAR_IDS: dict[tuple[int, int], str] = {
-    (11, 0):   "12",   # 기존 표 헤더
-    (11, -5):  "23",
-    (11, -10): "24",
-    (11, -15): "25",
-    (11, -20): "26",
-    (10, 0):   "27",
-    (10, -5):  "28",
-    (10, -10): "29",
-    (10, -15): "30",
-    (10, -20): "31",
-}
-
-# 피팅 시도 순서: (font_size, spacing) — 자간 먼저 줄이고, 그 다음 폰트 축소
-FIT_CANDIDATES: list[tuple[int, int]] = [
-    (11, 0), (11, -5), (11, -10), (11, -15), (11, -20),
-    (10, 0), (10, -5), (10, -10), (10, -15), (10, -20),
-]
-
-
-def _visual_text_width(text: str) -> float:
-    """텍스트의 시각적 너비를 추정한다.
-
-    한글/CJK 문자는 가중치 2.0, ASCII/영숫자는 1.0으로 계산하여
-    실제 화면에서 차지하는 폭 비율을 근사한다.
-    **bold** 마크업은 제거 후 측정한다.
-    """
-    # bold 마크업 제거
-    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    width = 0.0
-    for ch in clean:
-        cp = ord(ch)
-        # CJK Unified Ideographs, Hangul Syllables, Fullwidth forms, etc.
-        if (
-            (0xAC00 <= cp <= 0xD7AF)       # 한글 완성형
-            or (0x1100 <= cp <= 0x11FF)     # 한글 자모
-            or (0x3130 <= cp <= 0x318F)     # 한글 호환 자모
-            or (0x4E00 <= cp <= 0x9FFF)     # CJK 한자
-            or (0xFF01 <= cp <= 0xFF60)     # Fullwidth Latin
-            or (0x3000 <= cp <= 0x303F)     # CJK Symbols
-        ):
-            width += 2.0
-        else:
-            width += 1.0
-    return width
-
-
-def _estimate_line_count(
-    text: str,
-    cell_width_hwp: int,
-    font_size_pt: int,
-    spacing_pct: int,
-) -> float:
-    """주어진 셀 폭·폰트·자간에서 텍스트가 차지할 줄 수를 근사한다.
-
-    근사 방법:
-      - 글자 1자의 폭 ≈ font_size(pt) × HWPUNIT_PER_PT
-      - 한글은 정방형(가로=세로), ASCII는 절반
-      - spacing_pct 적용 시 글자 간격이 비례 축소
-      - 셀 여백 (좌510 + 우510 = 1020 HWPUNIT) 차감
-    """
-    HWPUNIT_PER_PT = 100  # charPr height 기준: 1pt = 100 HWPUNIT
-    char_base_width = font_size_pt * HWPUNIT_PER_PT  # 한글 1자 기본 폭
-
-    # 자간 적용: spacing_pct는 글자폭 대비 %로, 음수면 좁아짐
-    # ex) -20% → 각 자간이 0.2 * char_width만큼 줄어듦
-    # 실효 글자폭 = char_width × (1 + spacing_pct/100)
-    spacing_factor = 1.0 + spacing_pct / 100.0
-
-    # 셀 여백 차감
-    usable_width = cell_width_hwp - 1020  # 좌510 + 우510
-    if usable_width <= 0:
-        return 999.0
-
-    # bold 마크업 제거 후 글자별 폭 합산
-    clean = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    total_text_width = 0.0
-    for ch in clean:
-        cp = ord(ch)
-        if (
-            (0xAC00 <= cp <= 0xD7AF)
-            or (0x1100 <= cp <= 0x11FF)
-            or (0x3130 <= cp <= 0x318F)
-            or (0x4E00 <= cp <= 0x9FFF)
-            or (0xFF01 <= cp <= 0xFF60)
-            or (0x3000 <= cp <= 0x303F)
-        ):
-            total_text_width += char_base_width * spacing_factor
-        else:
-            total_text_width += (char_base_width * 0.5) * spacing_factor
-
-    if total_text_width <= 0:
-        return 0.0
-
-    import math
-    return math.ceil(total_text_width / usable_width)
-
-
-def _fit_cell_text(
-    text: str,
-    cell_width_hwp: int,
-    *,
-    is_header: bool = False,
-) -> tuple[int, int]:
-    """셀 텍스트에 대해 최적 (font_size, spacing) 조합을 결정한다.
-
-    전략:
-      1. 11pt spacing=0으로 시작 → 2줄 이하면 바로 채택
-      2. 3줄 이상이면 spacing을 -5%씩 줄여서 줄 수가 줄어드는 지점 탐색
-      3. -20%까지 해도 개선 안 되면 10pt로 넘어감
-      4. 최소 줄 수를 달성하는 조합을 반환
-
-    Returns:
-        (font_size_pt, spacing_pct) 튜플
-    """
-    if not text or not text.strip():
-        return (11, 0)
-
-    best = (11, 0)
-    best_lines = _estimate_line_count(text, cell_width_hwp, 11, 0)
-
-    # 이미 2줄 이하면 조정 불필요
-    if best_lines <= 2:
-        return best
-
-    for font_pt, spacing in FIT_CANDIDATES[1:]:  # (11,0) 이미 체크함
-        lines = _estimate_line_count(text, cell_width_hwp, font_pt, spacing)
-        if lines < best_lines:
-            best_lines = lines
-            best = (font_pt, spacing)
-        # 2줄 이하 달성하면 즉시 채택
-        if best_lines <= 2:
-            break
-
-    return best
-
-
-def _compute_col_widths(
-    header: List[str],
-    rows: List[List[str]],
-    col_cnt: int,
-    total_width: int,
-    *,
-    min_ratio: float = 0.12,
-) -> List[int]:
-    """헤더 + 본문 콘텐츠를 분석하여 최적 열 너비(HWPUNIT)를 반환한다.
-
-    알고리즘:
-      1. 각 열에 대해 (헤더 + 모든 행)의 최대 시각적 너비를 측정
-      2. 최대 너비 비율에 따라 total_width를 배분
-      3. 각 열은 최소 min_ratio(기본 12%) 이상의 폭을 보장
-      4. 나머지 1 HWPUNIT은 마지막 열에 보정
-
-    Returns:
-        각 열의 너비 리스트 (HWPUNIT, 합계 = total_width)
-    """
-    # 1) 열별 최대 시각적 너비 수집
-    max_widths = [0.0] * col_cnt
-    # 헤더
-    for col_idx in range(col_cnt):
-        if col_idx < len(header):
-            max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(header[col_idx]))
-    # 본문 행
-    for row in rows:
-        for col_idx in range(col_cnt):
-            if col_idx < len(row):
-                max_widths[col_idx] = max(max_widths[col_idx], _visual_text_width(row[col_idx]))
-
-    # 2) 모든 열의 너비가 0이면 균등 분할 fallback
-    total_visual = sum(max_widths)
-    if total_visual == 0:
-        base = total_width // col_cnt
-        widths = [base] * col_cnt
-        widths[-1] += total_width - base * col_cnt
-        return widths
-
-    # 3) 최소 비율 적용하여 비율 계산
-    min_width_hwp = int(total_width * min_ratio)
-    ratios = [w / total_visual for w in max_widths]
-
-    # 최소 비율 미달 열에 대해 floor 적용 후 나머지 재배분
-    locked = [False] * col_cnt
-    locked_sum = 0.0
-    for i in range(col_cnt):
-        if ratios[i] < min_ratio:
-            locked[i] = True
-            locked_sum += min_ratio
-
-    remaining_ratio = 1.0 - locked_sum
-    unlocked_visual = sum(max_widths[i] for i in range(col_cnt) if not locked[i])
-
-    final_ratios = [0.0] * col_cnt
-    for i in range(col_cnt):
-        if locked[i]:
-            final_ratios[i] = min_ratio
-        elif unlocked_visual > 0:
-            final_ratios[i] = (max_widths[i] / unlocked_visual) * remaining_ratio
-        else:
-            final_ratios[i] = remaining_ratio / max(1, sum(1 for x in locked if not x))
-
-    # 4) HWPUNIT으로 변환
-    widths = [max(min_width_hwp, int(total_width * r)) for r in final_ratios]
-
-    # 5) 합계 보정 (반올림 오차 → 마지막 열에서 조정)
-    diff = total_width - sum(widths)
-    widths[-1] += diff
-
-    return widths
 
 
 def _append_markdown_table(
@@ -2338,6 +1905,10 @@ def _append_summary_table(
 
     return p_counter, table_id + 1, secpr_attached
 
+
+# ========================================================================
+# Module: process_diagram
+# ========================================================================
 
 
 def _append_process_table(
@@ -2948,51 +2519,536 @@ def _append_diagram_table(
     p_id = p_counter
     return p_id, table_id + 1, secpr_attached
 
-def mm_to_hwp(mm: float) -> str:
-    """Convert millimeters to Hangul internal HWPUNIT."""
 
-    return str(int(mm * HWPUNITS_PER_MM))
-
-
-NS = {
-    "ha": "http://www.hancom.co.kr/hwpml/2011/app",
-    "hp": "http://www.hancom.co.kr/hwpml/2011/paragraph",
-    "hp10": "http://www.hancom.co.kr/hwpml/2016/paragraph",
-    "hs": "http://www.hancom.co.kr/hwpml/2011/section",
-    "hc": "http://www.hancom.co.kr/hwpml/2011/core",
-    "hh": "http://www.hancom.co.kr/hwpml/2011/head",
-    "hhs": "http://www.hancom.co.kr/hwpml/2011/history",
-    "hm": "http://www.hancom.co.kr/hwpml/2011/master-page",
-    "hpf": "http://www.hancom.co.kr/schema/2011/hpf",
-    "hwpunitchar": "http://www.hancom.co.kr/hwpml/2016/HwpUnitChar",
-    "ooxmlchart": "http://www.hancom.co.kr/hwpml/2016/ooxmlchart",
-    "dc": "http://purl.org/dc/elements/1.1/",
-    "opf": "http://www.idpf.org/2007/opf/",
-    "epub": "http://www.idpf.org/2007/ops",
-    "config": "urn:oasis:names:tc:opendocument:xmlns:config:1.0",
-    "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
-    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "pkg": "http://www.hancom.co.kr/hwpml/2016/meta/pkg#",
-}
-
-# Register all namespace prefixes to avoid ns0, ns1, etc.
-for prefix, uri in NS.items():
-    ET.register_namespace(prefix, uri)
-
-# Additional namespaces
-ET.register_namespace("hv", "http://www.hancom.co.kr/hwpml/2011/version")
-ET.register_namespace("odf", "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0")
+# ========================================================================
+# Module: parser
+# ========================================================================
 
 
-def _q(prefix: str, tag: str) -> str:
-    """Qualified tag helper: _q("hp", "p") → '{ns}p'."""
+def parse_md_lines(lines: Iterable[str]) -> List[Block]:
+    def _normalize_line(raw: str) -> str:
+        # 탭 → 스페이스 치환 후 개행 제거
+        return raw.replace("\t", "    ").rstrip("\n")
 
-    return f"{{{NS[prefix]}}}{tag}"
+    def _parse_table_block(idx: int, line_list: List[str]) -> tuple[TableBlock | None, int]:
+        """현재 인덱스에서 마크다운 표를 파싱한다. 다음 소비할 인덱스까지 반환."""
+
+        title_match = re.match(r"^<\s*표\s*제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not title_match:
+            return None, idx
+        title = title_match.group(1).strip()
+        table_lines: List[str] = []
+        j = idx + 1
+        # 제목 다음의 공백/빈 줄은 건너뛴다.
+        while j < len(line_list) and not line_list[j].strip():
+            j += 1
+        while j < len(line_list):
+            ln = line_list[j].rstrip("\n")
+            if ln.strip().startswith("|"):
+                table_lines.append(ln.strip())
+                j += 1
+                continue
+            # 표 블록이 끝났다고 판단
+            break
+
+        if len(table_lines) < 2:
+            return None, idx
+
+        def _split_row(row: str) -> List[str]:
+            cells = row.strip().strip("|").split("|")
+            return [c.strip() for c in cells]
+
+        header_cells = _split_row(table_lines[0])
+        align_cells = _split_row(table_lines[1])
+        body_rows = [_split_row(r) for r in table_lines[2:]]
+
+        def _parse_align(token: str) -> str:
+            token = token.strip()
+            if token.startswith(":") and token.endswith(":"):
+                return "CENTER"
+            if token.endswith(":"):
+                return "RIGHT"
+            if token.startswith(":"):
+                return "LEFT"
+            return "LEFT"
+
+        aligns = [_parse_align(a) for a in align_cells]
+        tbl = TableBlock(
+            type=BlockType.TABLE,
+            raw="\n".join([line_list[idx]] + table_lines),
+            text=title,
+            title=title,
+            header=header_cells,
+            aligns=aligns,
+            rows=body_rows,
+        )
+        return tbl, j
+
+    def _parse_summary_block(idx: int, line_list: List[str]) -> tuple[SummaryTableBlock | None, int]:
+        marker = line_list[idx].strip().replace(" ", "")
+        if marker not in ("<요약표시작>", "<요약표시작>"):
+            return None, idx
+        items: List[Block] = []
+        j = idx + 1
+        while j < len(line_list):
+            ln_original = _normalize_line(line_list[j])
+            ln = ln_original.lstrip(" ")
+            if ln.replace(" ", "") == "<요약표끝>":
+                j += 1
+                break
+            if not ln:
+                j += 1
+                continue
+            if ln.startswith("◦"):
+                text = ln[len("◦") :].strip()
+                items.append(Block(BlockType.BODY, ln_original, text))
+            elif ln.startswith("-"):
+                text = ln[len("-") :].strip()
+                items.append(Block(BlockType.DESC2, ln_original, text))
+            else:
+                # 요약표 내부의 기타 라인은 PLAIN으로 유지
+                items.append(Block(BlockType.PLAIN, ln_original, ln))
+            j += 1
+        summ = SummaryTableBlock(
+            type=BlockType.SUMMARY_TABLE,
+            raw="\n".join(line_list[idx:j]),
+            text="요약표",
+            items=items,
+        )
+        return summ, j
+
+    def _parse_process_block(idx: int, line_list: List[str]) -> tuple:
+        """<프로세스: 제목> ~ </프로세스> 블록을 파싱한다."""
+        proc_match = re.match(r"^<\s*프로세스\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not proc_match:
+            return None, idx
+        proc_title = proc_match.group(1).strip()
+        j = idx + 1
+        proc_rows = []  # [(steps_list, is_reversed), ...]
+        
+        while j < len(line_list):
+            ln = line_list[j].strip()
+            if ln.replace(" ", "") in ("</프로세스>", "</프로세스>"):
+                j += 1
+                break
+            if not ln or ln == "↓":
+                j += 1
+                continue
+            
+            # 방향 결정: ← 가 있으면 역방향
+            is_reversed = "←" in ln
+            
+            # 화살표로 분리
+            if is_reversed:
+                raw_steps = [s.strip() for s in re.split(r"\s*←\s*", ln) if s.strip()]
+            else:
+                raw_steps = [s.strip() for s in re.split(r"\s*→\s*", ln) if s.strip()]
+            
+            steps = []
+            for step in raw_steps:
+                # "단계명(담당자)" 형식 파싱
+                m = re.match(r"^(.+?)\((.+?)\)$", step)
+                if m:
+                    steps.append((m.group(1).strip(), m.group(2).strip()))
+                else:
+                    steps.append((step, ""))
+            
+            if steps:
+                proc_rows.append((steps, is_reversed))
+            j += 1
+        
+        if not proc_rows:
+            return None, idx
+        
+        block = ProcessBlock(
+            type=BlockType.PROCESS,
+            raw="\n".join(line_list[idx:j]),
+            text=proc_title,
+            proc_title=proc_title,
+            proc_rows=proc_rows,
+        )
+        return block, j
+
+    def _parse_diagram_block(idx: int, line_list: List[str]) -> tuple:
+        """<도식도: 제목> ~ </도식도> 블록을 파싱한다."""
+        diag_match = re.match(r"^<\s*도식도\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not diag_match:
+            return None, idx
+        diag_title = diag_match.group(1).strip()
+        j = idx + 1
+        layers = []       # [[DiagramBox, ...], ...]
+        connectors = []   # ['↓', '↔', ...]
+        current_layer = []
+
+        def _flush_layer():
+            nonlocal current_layer
+            if current_layer:
+                layers.append(current_layer)
+                current_layer = []
+
+        while j < len(line_list):
+            ln = line_list[j].strip()
+            if ln.replace(" ", "") in ("</도식도>", "</도식도>"):
+                j += 1
+                break
+            if not ln:
+                # 빈 줄 = 레이어 구분
+                _flush_layer()
+                j += 1
+                continue
+            if ln in ("↓", "↔"):
+                _flush_layer()
+                connectors.append(ln)
+                j += 1
+                continue
+
+            # [제목 | 내용1 | 내용2] 형식 파싱
+            box_match = re.match(r"^\[(.+)\]\s*$", ln)
+            if box_match:
+                content = box_match.group(1)
+                parts = [p.strip() for p in content.split("|")]
+                box_title = parts[0]
+                box_items = parts[1:] if len(parts) > 1 else []
+                current_layer.append(DiagramBox(title=box_title, items=box_items))
+            j += 1
+
+        _flush_layer()
+
+        if not layers:
+            return None, idx
+
+        block = DiagramBlock(
+            type=BlockType.DIAGRAM,
+            raw="\n".join(line_list[idx:j]),
+            text=diag_title,
+            diagram_title=diag_title,
+            layers=layers,
+            connectors=connectors,
+        )
+        return block, j
+
+    blocks: List[Block] = []
+    line_list = [_normalize_line(ln) for ln in lines]
+    i = 0
+    while i < len(line_list):
+        line = line_list[i]
+        stripped = line.lstrip(" ")
+        leading_spaces = len(line) - len(stripped)
+
+        # 마크다운 헤더 접두사 (###, ##, #) 제거 — 커스텀 마커가 인식되도록
+        stripped = re.sub(r'^#{1,6}\s+', '', stripped)
+
+        # 도식도
+        diagram_block, next_idx = _parse_diagram_block(i, line_list)
+        if diagram_block is not None:
+            blocks.append(diagram_block)
+            i = next_idx
+            continue
+
+        # 프로세스 흐름도
+        process_block, next_idx = _parse_process_block(i, line_list)
+        if process_block is not None:
+            blocks.append(process_block)
+            i = next_idx
+            continue
+
+        # 요약표
+        summary_block, next_idx = _parse_summary_block(i, line_list)
+        if summary_block is not None:
+            blocks.append(summary_block)
+            i = next_idx
+            continue
+
+        # 표
+        table_block, next_idx = _parse_table_block(i, line_list)
+        if table_block is not None:
+            blocks.append(table_block)
+            i = next_idx
+            continue
+
+        if not stripped:
+            blocks.append(Block(BlockType.PLAIN, line, ""))
+            i += 1
+            continue
+
+        if stripped.startswith("<주제목>"):
+            text = stripped[len("<주제목>") :].strip()
+            if not text and i + 1 < len(line_list):
+                text = line_list[i + 1].strip()
+                i += 1
+            blocks.append(Block(BlockType.TITLE, line, text))
+            i += 1
+            continue
+
+        if stripped.startswith("<강조>"):
+            text = stripped[len("<강조>") :].strip()
+            if not text and i + 1 < len(line_list):
+                text = line_list[i + 1].strip()
+                i += 1
+            blocks.append(Block(BlockType.EMPHASIS, line, text))
+            i += 1
+            continue
+
+        if stripped.startswith("□"):
+            text = stripped[len("□") :].strip()
+            blocks.append(Block(BlockType.SUBTITLE, line, text))
+            i += 1
+            continue
+
+        if stripped.startswith(("◦", "•", "∙", "·")):
+            text = stripped[len("◦") :].strip()
+            blocks.append(Block(BlockType.BODY, line, text))
+            i += 1
+            continue
+
+        if stripped.startswith(("-", "–", "—")) and leading_spaces <= 3:
+            text = stripped[len(stripped[0]) :].strip()
+            blocks.append(Block(BlockType.DESC2, line, text))
+            i += 1
+            continue
+
+        if stripped.startswith(("*", "●")) and leading_spaces <= 4:
+            text = stripped[len(stripped[0]) :].strip()
+            blocks.append(Block(BlockType.DESC3, line, text))
+            i += 1
+            continue
+
+        blocks.append(Block(BlockType.PLAIN, line, stripped))
+        i += 1
+
+    return blocks
+
+
+# ========================================================================
+# Module: xml_builder
+# ========================================================================
 
 
 # ---------------------------------------------------------------------------
-# Minimal HWPX XML builders (header.xml, section0.xml, content.hpf, container)
+# 문서 메타데이터 유틸
 # ---------------------------------------------------------------------------
+
+KOREAN_WEEKDAY_NAMES = [
+    "월요일", "화요일", "수요일", "목요일",
+    "금요일", "토요일", "일요일",
+]
+
+
+def _format_localized_datetime(local_dt: datetime) -> str:
+    weekday = KOREAN_WEEKDAY_NAMES[local_dt.weekday()]
+    ampm = "오전" if local_dt.hour < 12 else "오후"
+    hour12 = local_dt.hour % 12 or 12
+    return (
+        f"{local_dt.year}년 {local_dt.month:02d}월 {local_dt.day:02d}일 "
+        f"{weekday} {ampm} {hour12}:{local_dt.minute:02d}:{local_dt.second:02d}"
+    )
+
+
+def _isoformat_utc(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _safe_get_username() -> str:
+    try:
+        return getpass.getuser()
+    except Exception:
+        return "auto"
+
+
+def _extract_doc_title(blocks: List[Block]) -> str:
+    for block in blocks:
+        if block.type == BlockType.TITLE and block.text.strip():
+            return _strip_bold_markup(block.text).strip()
+    for block in blocks:
+        if block.text.strip():
+            return _strip_bold_markup(block.text).strip()
+    return "Untitled"
+
+
+def _build_header_footer_text(meta: DocumentMetadata) -> tuple[str, str]:
+    """머리말/꼬리말에 넣을 기본 문자열을 구성한다."""
+    title = meta.title.strip() or "Untitled"
+    header_text = f"추진단 자료 스타일 보고서 - {title}"
+    footer_text = ""
+    return header_text, footer_text
+
+
+def _build_document_metadata(blocks: List[Block]) -> DocumentMetadata:
+    title = _extract_doc_title(blocks)
+    user = _safe_get_username()
+    now_utc = datetime.now(timezone.utc)
+    local = now_utc.astimezone()
+    return DocumentMetadata(
+        title=title,
+        creator=user,
+        subject=title,
+        description=title,
+        last_saved_by=user,
+        keyword=title,
+        created_at=now_utc,
+        modified_at=now_utc,
+        display_date=_format_localized_datetime(local),
+    )
+
+
+def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: str) -> None:
+    """Tier1 샘플 패턴을 따르는 머리말/꼬리말 컨트롤을 추가한다.
+
+    - 머리말: 첫 번째 문단(`id="0"`) 안, 제목 테이블(run) 바로 뒤에 header ctrl 삽입.
+    - 꼬리말: 첫 번째 SUBTITLE 문단 안, 선행 run 으로 footer ctrl 삽입.
+    - 둘 다 오른쪽 정렬 스타일을 사용한다.
+
+    섹션 구조가 예상과 다를 경우에는 조용히 건너뛰도록 방어적으로 동작한다.
+    """
+
+    # 1) Header: p id="0" 안의 테이블(run) 뒤에 header ctrl 주입
+    first_p = None
+    for p in root.findall(_q("hp", "p")):
+        first_p = p
+        break
+
+    if first_p is not None:
+        # 제목 테이블을 담고 있는 run 찾기
+        header_run = None
+        for run in first_p.findall(_q("hp", "run")):
+            tbl = run.find(_q("hp", "tbl"))
+            if tbl is not None:
+                header_run = run
+                break
+
+        if header_run is not None:
+            header_ctrl = ET.SubElement(header_run, _q("hp", "ctrl"))
+            header_elem = ET.SubElement(
+                header_ctrl,
+                _q("hp", "header"),
+                {
+                    "id": "1",
+                    "applyPageType": "BOTH",
+                },
+            )
+            header_sublist = ET.SubElement(
+                header_elem,
+                _q("hp", "subList"),
+                {
+                    "id": "",
+                    "textDirection": "HORIZONTAL",
+                    "lineWrap": "BREAK",
+                    "vertAlign": "TOP",
+                    "linkListIDRef": "0",
+                    "linkListNextIDRef": "0",
+                    "textWidth": TABLE_WIDTH_HWP,
+                    "textHeight": "2834",
+                    "hasTextRef": "0",
+                    "hasNumRef": "0",
+                },
+            )
+            # Tier1 샘플과 동일한 오른쪽 정렬 스타일을 사용한다.
+            # (샘플 기준: paraPrIDRef="8", styleIDRef="0")
+            header_p = ET.SubElement(
+                header_sublist,
+                _q("hp", "p"),
+                {
+                    "id": "0",
+                    "paraPrIDRef": HEADER_PARA_ID,
+                    "styleIDRef": HEADER_STYLE_ID,
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0",
+                },
+            )
+            header_run_inner = ET.SubElement(
+                header_p,
+                _q("hp", "run"),
+                {"charPrIDRef": HEADER_CHAR_ID},
+            )
+            # 오른쪽 정렬 시 샘플처럼 앞에 탭을 하나 두어 위치를 맞춘다.
+            t = ET.SubElement(header_run_inner, _q("hp", "t"))
+            # 탭 요소는 단순 오른쪽 정렬용이므로 상수값 사용
+            t.text = ""
+            tab = ET.SubElement(
+                t,
+                _q("hp", "tab"),
+                {
+                    "width": "39188",
+                    "leader": "0",
+                    "type": "2",
+                },
+            )
+            # 실제 텍스트는 탭 뒤에 이어붙이기
+            t.tail = header_text
+
+    # 2) Footer: 첫 번째 SUBTITLE 문단 안에 footer ctrl run을 prepend
+    #    스타일 통일 후 paraPrIDRef로 구분 불가 → run의 charPrIDRef로 식별
+    subtitle_char_id = RUN_CHAR_OVERRIDE_MAP[BlockType.SUBTITLE]
+    first_subtitle_p = None
+    for p in root.findall(_q("hp", "p")):
+        for run_el in p.findall(_q("hp", "run")):
+            if run_el.get("charPrIDRef") == subtitle_char_id:
+                first_subtitle_p = p
+                break
+        if first_subtitle_p is not None:
+            break
+
+    if first_subtitle_p is not None:
+        # 기존 run 들 앞에 footer ctrl run 을 하나 삽입
+        footer_run = ET.Element(
+            _q("hp", "run"),
+            {"charPrIDRef": FOOTER_CHAR_ID},
+        )
+        footer_ctrl = ET.SubElement(footer_run, _q("hp", "ctrl"))
+        footer_elem = ET.SubElement(
+            footer_ctrl,
+            _q("hp", "footer"),
+            {
+                "id": "3",
+                "applyPageType": "BOTH",
+            },
+        )
+        footer_sublist = ET.SubElement(
+            footer_elem,
+            _q("hp", "subList"),
+            {
+                "id": "",
+                "textDirection": "HORIZONTAL",
+                "lineWrap": "BREAK",
+                "vertAlign": "BOTTOM",
+                "linkListIDRef": "0",
+                "linkListNextIDRef": "0",
+                "textWidth": TABLE_WIDTH_HWP,
+                "textHeight": "2834",
+                "hasTextRef": "0",
+                "hasNumRef": "0",
+            },
+        )
+        # Tier1 샘플과 동일한 꼬리말용 paraPr/스타일을 사용한다.
+        # (샘플 기준: paraPrIDRef="9", styleIDRef="0")
+        footer_p = ET.SubElement(
+            footer_sublist,
+            _q("hp", "p"),
+            {
+                "id": "0",
+                "paraPrIDRef": FOOTER_PARA_ID,
+                "styleIDRef": FOOTER_STYLE_ID,
+                "pageBreak": "0",
+                "columnBreak": "0",
+                "merged": "0",
+            },
+        )
+        footer_run_inner = ET.SubElement(
+            footer_p,
+            _q("hp", "run"),
+            {"charPrIDRef": FOOTER_CHAR_ID},
+        )
+        t_footer = ET.SubElement(footer_run_inner, _q("hp", "t"))
+        t_footer.text = footer_text
+
+        # 새 run 을 첫 child 로 삽입
+        existing = list(first_subtitle_p)
+        for child in existing:
+            first_subtitle_p.remove(child)
+        first_subtitle_p.append(footer_run)
+        for child in existing:
+            first_subtitle_p.append(child)
 
 
 def build_header_xml() -> bytes:
@@ -4224,6 +4280,14 @@ def build_container_rdf() -> bytes:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+# ========================================================================
+# Module: md_to_hwpx
+# ========================================================================
+
+
+# Ensure project root is in sys.path (for CLI: python converter/md_to_hwpx.py)
+
+
 # ---------------------------------------------------------------------------
 # Writing .hwpx container (realistic minimal package)
 # ---------------------------------------------------------------------------
@@ -4307,3 +4371,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
