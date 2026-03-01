@@ -2599,6 +2599,36 @@ def _append_diagram_table(
     if not block.layers:
         return p_id, table_id, secpr_attached
 
+    # ↔ 커넥터 전처리: 인접 레이어를 합쳐서 좌우 병렬 배치
+    merged_layers = []
+    merged_connectors = []
+    lr_split_at = {}  # layer_idx → 왼쪽 그룹 박스 수 (↔ 분리 지점)
+    i = 0
+    while i < len(block.layers):
+        # 현재 레이어 뒤에 ↔ 커넥터가 있으면 다음 레이어와 합침
+        if (i < len(block.connectors) and block.connectors[i] == "↔"
+                and i + 1 < len(block.layers)):
+            left_n = len(block.layers[i])
+            combined = list(block.layers[i]) + list(block.layers[i + 1])
+            lr_split_at[len(merged_layers)] = left_n
+            merged_layers.append(combined)
+            # ↔ 다음의 커넥터가 있으면 그것을 사용
+            if i + 1 < len(block.connectors):
+                merged_connectors.append(block.connectors[i + 1])
+            i += 2
+        else:
+            merged_layers.append(list(block.layers[i]))
+            if i < len(block.connectors):
+                merged_connectors.append(block.connectors[i])
+            i += 1
+    # 커넥터 길이 보정 (layers - 1)
+    while len(merged_connectors) >= len(merged_layers):
+        merged_connectors.pop()
+
+    # 이후 merged_layers, merged_connectors를 사용
+    layers = merged_layers
+    connectors = merged_connectors
+
     # 제목 표기
     p_title = ET.SubElement(
         parent,
@@ -2622,7 +2652,7 @@ def _append_diagram_table(
     p_id += 1
 
     # 최대 열 수 결정 (가장 많은 박스를 가진 레이어 기준)
-    max_boxes = max(len(layer) for layer in block.layers)
+    max_boxes = max(len(layer) for layer in layers)
     # 열 구성: [박스1, 여백, 박스2, 여백, ..., 박스N]
     # 여백 열은 박스 사이 간격 (화살표 없음)
     col_cnt = max_boxes * 2 - 1 if max_boxes > 1 else 1
@@ -2645,7 +2675,7 @@ def _append_diagram_table(
         col_widths[-1] += (total_width - used)
 
     # 행 수 계산
-    row_count = len(block.layers) * 2 - 1  # 레이어행 + 화살표행
+    row_count = len(layers) * 2 - 1  # 레이어행 + 화살표행
     box_row_height = 3200   # 박스 행 높이
     arrow_row_height = 1200  # 화살표 행 높이
 
@@ -2775,7 +2805,7 @@ def _append_diagram_table(
                 {"left": "28", "right": "28", "top": "113", "bottom": "113"})
 
     actual_row = 0
-    for layer_idx, layer in enumerate(block.layers):
+    for layer_idx, layer in enumerate(layers):
         tr = ET.SubElement(tbl, _q("hp", "tr"))
         n_boxes = len(layer)
 
@@ -2815,6 +2845,8 @@ def _append_diagram_table(
                 {"left": "170", "right": "170", "top": "113", "bottom": "113"})
         else:
             # 다중 박스 레이어
+            # ↔ 분리 지점 확인 (왼쪽 그룹의 마지막 박스 인덱스)
+            split_box_idx = lr_split_at.get(layer_idx)
             cell_idx = 0
             for bi, box in enumerate(layer):
                 _add_diagram_cell(tr, cell_idx, actual_row,
@@ -2824,9 +2856,12 @@ def _append_diagram_table(
                 cell_idx += 1
                 # 간격 셀
                 if bi < n_boxes - 1 and cell_idx < col_cnt:
+                    # ↔ 분리 지점이면 화살표 표시
+                    gap_arrow = "↔" if (split_box_idx is not None and bi == split_box_idx - 1) else ""
                     _add_diagram_cell(tr, cell_idx, actual_row,
                                       col_widths[cell_idx] if cell_idx < len(col_widths) else col_widths[-1],
-                                      box_row_height)
+                                      box_row_height,
+                                      arrow_text=gap_arrow)
                     cell_idx += 1
             # 남은 열 채우기
             while cell_idx < col_cnt:
@@ -2838,9 +2873,9 @@ def _append_diagram_table(
         actual_row += 1
 
         # 화살표 행 (레이어 사이)
-        if layer_idx < len(block.layers) - 1:
+        if layer_idx < len(layers) - 1:
             tr_arrow = ET.SubElement(tbl, _q("hp", "tr"))
-            connector = block.connectors[layer_idx] if layer_idx < len(block.connectors) else "↓"
+            connector = connectors[layer_idx] if layer_idx < len(connectors) else "↓"
 
             if connector == "↔":
                 # 좌우 비교: 가운데에 ↔ 표시
@@ -2854,7 +2889,7 @@ def _append_diagram_table(
             else:
                 # ↓ 분기/수렴: 각 박스 위치에 ↓ 배치
                 # 위 레이어 N개 → 아래 M개: 양쪽에 모두 ↓
-                next_layer = block.layers[layer_idx + 1]
+                next_layer = layers[layer_idx + 1]
                 cur_n = len(layer)
                 next_n = len(next_layer)
                 # 화살표 위치 결정
