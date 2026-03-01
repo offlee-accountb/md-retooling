@@ -1,9 +1,30 @@
 # 📋 MD→HWPX 웹 버전 (순수 JavaScript) 구현 계획
 
-> **Updated 2026-03-01** — Python 모듈화 리팩토링 완료(Phase 1-6) 후 갱신
+> **Updated 2026-03-01** — 점진적 검증 전략(빈 문서 → 텍스트 → 표 → 도식도)으로 변경
 >
 > Python `converter/` 패키지(10개 모듈, 4,483줄)를
 > 순수 JavaScript로 변환하여 **HTML 파일 1개**로 만드는 계획
+
+---
+
+## 핵심 설계 원칙
+
+### 🎯 "매 Phase마다 한글에서 열어본다"
+
+AI가 코드를 작성할 수는 있지만, **한글(HWP/HWPX)에서 실제로 열었을 때
+글꼴이 맞는지, 표가 깨지는지, 여백이 맞는지는 사람이 직접 봐야 한다.**
+
+따라서:
+- ❌ 모든 모듈을 만든 뒤 마지막에 통합 테스트 (위험)
+- ✅ **빈 문서부터 동작시키고, 매 단계 기능을 추가하며 한글 확인** (안전)
+
+```
+Phase 1 → 빈 HWPX 생성          → 한글에서 열림? ✅
+Phase 2 → 텍스트만 있는 HWPX     → 제목/소제목/본문 맞음? ✅
+Phase 3 → 표 포함 HWPX          → 표/강조/요약표 맞음? ✅
+Phase 4 → 프로세스/도식도 포함    → 흐름도/도식도 맞음? ✅
+Phase 5 → UI + 패키징           → 웹에서 드래그앤드롭 동작? ✅
+```
 
 ---
 
@@ -12,237 +33,173 @@
 ```
 MD변환기.html (단일 파일, 서버 불필요)
 ├── [인라인] JSZip (~30KB minified)
-├── JS 모듈 (Python 1:1 대응)
-│   ├── models.js         ← converter/models.py        (92줄)
-│   ├── config.js         ← converter/config.py         (390줄)
-│   ├── parser.js         ← converter/parser.py          (307줄)
-│   ├── inline.js         ← renderers/inline.py          (120줄)
-│   ├── textFitting.js    ← renderers/text_fitting.py    (242줄)
-│   ├── tables.js         ← renderers/tables.py          (743줄)
-│   ├── processDiagram.js ← renderers/process_diagram.py (636줄)
-│   ├── xmlBuilder.js     ← converter/xml_builder.py     (1,497줄)
-│   └── converter.js      ← converter/md_to_hwpx.py      (121줄)
+├── JS 엔진 (Python 1:1 대응)
+│   ├── models       ← converter/models.py
+│   ├── config       ← converter/config.py
+│   ├── parser       ← converter/parser.py
+│   ├── inline       ← renderers/inline.py
+│   ├── textFitting  ← renderers/text_fitting.py
+│   ├── tables       ← renderers/tables.py
+│   ├── processDiag  ← renderers/process_diagram.py
+│   ├── xmlBuilder   ← converter/xml_builder.py
+│   └── converter    ← converter/md_to_hwpx.py
 ├── 미리보기 PNG (base64 인라인)
-└── 웹 UI (드래그&드롭, 기존 run_web.py HTML 재사용)
+└── 웹 UI (드래그&드롭)
 ```
-
-**핵심 차이**: 서버 불필요. 브라우저에서 `.md` 읽기 → JS로 변환 → JSZip으로 `.hwpx` 생성 → 다운로드.
 
 ---
 
-## Python → JavaScript 모듈 매핑
-
-### 소스 구조 대응표
-
-| # | Python 모듈 | JS 섹션 | 줄 수 | 변환 난이도 | 비고 |
-|---|---|---|---|---|---|
-| 1 | `models.py` | `models.js` | 92 | ⭐ 쉬움 | dataclass → JS class |
-| 2 | `config.py` | `config.js` | 390 | ⭐⭐ 중간 | YAML 로딩 → JS 객체 리터럴 |
-| 3 | `preview_data.py` | (인라인 상수) | 335 | ⭐ 쉬움 | base64 문자열 복사 |
-| 4 | `renderers/inline.py` | `inline.js` | 120 | ⭐ 쉬움 | 정규식 + 문자열 처리 |
-| 5 | `renderers/text_fitting.py` | `textFitting.js` | 242 | ⭐⭐ 중간 | 순수 계산 로직 |
-| 6 | `renderers/tables.py` | `tables.js` | 743 | ⭐⭐⭐ 어려움 | XML DOM 조작 |
-| 7 | `renderers/process_diagram.py` | `processDiagram.js` | 636 | ⭐⭐⭐ 어려움 | XML DOM 조작 |
-| 8 | `parser.py` | `parser.js` | 307 | ⭐⭐ 중간 | 정규식 + 상태 머신 |
-| 9 | `xml_builder.py` | `xmlBuilder.js` | 1,497 | ⭐⭐⭐⭐ 최대 | 846줄 header + 메타 |
-| 10 | `md_to_hwpx.py` | `converter.js` | 121 | ⭐ 쉬움 | ZIP 패키징 (JSZip) |
-| | **합계** | | **4,483** | | |
+## 단계별 구현 계획 (점진적 확장)
 
 ---
 
-## 단계별 구현 계획
+### Phase 1: 빈 문서 HWPX 생성 (Day 1-2)
 
-### Phase 1: 기반 구조 + 설정 (Day 1)
-
-**목표**: HTML 껍데기, JS 모듈 구조, 설정/상수 변환
+**목표**: JS로 빈 HWPX 파일을 만들어 **한글에서 열리는지 확인**
 
 ```
-작업:
-├── HTML_PAGE (run_web.py에서 복사 + 오프라인 변환 로직 교체)
-├── JSZip CDN → <script> 인라인 임베딩
-├── models.py → models.js
-│   ├── BlockType enum → const BlockType = { TITLE: 'TITLE', ... }
-│   ├── Block class → class Block { constructor(...) {} }
-│   ├── TableBlock, ProcessBlock, DiagramBlock 등
-│   └── DocumentMetadata class
-├── config.py → config.js
-│   ├── core_styles.yaml → JS 객체 리터럴 (YAML 파서 불필요)
-│   ├── _build_style_maps() → buildStyleMaps()
-│   ├── 모든 상수 (PAGE_WIDTH_HWP, TABLE_WIDTH_HWP, ...)
-│   ├── NS 네임스페이스 → const NS = { ... }
-│   ├── _q() → q(prefix, tag)
-│   ├── mm_to_hwp() → mmToHwp()
-│   └── _attach_secpr() → attachSecPr()
-└── preview_data.py → PREVIEW_PNG_BASE64 상수 (그대로 복사)
-```
-
-**테스트**: HTML 열기 → 콘솔에서 `BlockType.TITLE`, `q('hp','p')` 동작 확인
-
----
-
-### Phase 2: 파서 + 인라인 (Day 2)
-
-**목표**: MD 텍스트 → Block 배열 변환
-
-```
-작업:
-├── inline.js
-│   ├── BOLD_PATTERN → /\*\*(.*?)\*\*/g
-│   ├── splitBoldSegments(text)
-│   ├── stripBoldMarkup(text)
-│   ├── formatBlockPreviewText(block)
-│   └── buildPreviewText(blocks, title)
-├── parser.js
-│   ├── parseMdLines(lines) — 메인 파서
-│   ├── parseTableBlock() — <표 제목:> 파싱
-│   ├── parseSummaryBlock() — <요약표:> 파싱
-│   ├── parseProcessBlock() — <프로세스:> 파싱
-│   └── parseDiagramBlock() — <도식도:> 파싱
-└── 테스트 콘솔 출력
-```
-
-**테스트**: `STANDARD_TEST.md` 텍스트를 textarea에 붙여넣기 → `parseMdLines()` → 블록 구조 콘솔 출력
-
----
-
-### Phase 3: XML 생성 핵심 (Day 3-4) ← **최대 작업량**
-
-**목표**: header.xml, section0.xml 등 XML 생성
-
-```
-작업:
-├── XML 생성 전략 결정
-│   ├── 방법 A: 문자열 템플릿 리터럴 (추천 — 구조 고정적)
-│   └── 방법 B: DOM API (document.createElementNS) → 불필요하게 복잡
-│
-├── xmlBuilder.js (1,497줄 → 예상 ~1,200줄 JS)
-│   ├── 메타데이터 유틸
-│   │   ├── formatLocalizedDatetime()
-│   │   ├── isoformatUtc()
-│   │   ├── extractDocTitle()
-│   │   ├── buildHeaderFooterText()
-│   │   └── buildDocumentMetadata()
-│   │
-│   ├── buildHeaderXml() ← 846줄, 최대 덩어리
-│   │   ├── fontfaces (7개 언어 × 3개 글꼴)
-│   │   ├── borderFills (42개) ← 대부분 데이터, 반복 패턴
-│   │   ├── charProperties (32개) ← 반복 패턴
-│   │   ├── paraProperties (~20개) ← 반복 패턴
-│   │   └── styles (~19개)
-│   │
-│   ├── appendHeaderFooterCtrl()
-│   ├── buildSection0Xml(blocks, docMeta) ← 본문 문단 생성
-│   ├── buildContentHpf(docMeta)
+포함 모듈:
+├── models     — BlockType, Block, DocumentMetadata (최소)
+├── config     — NS, q(), mmToHwp(), 상수, attachSecPr()
+├── xmlBuilder — 전체 XML 빌더 (이것이 핵심)
+│   ├── buildHeaderXml()     ← 846줄, 가장 큰 부분
+│   ├── buildSection0Xml()   ← 최소: 빈 문단 1개만
+│   ├── buildContentHpf()
 │   ├── buildContainerXml()
 │   ├── buildVersionXml()
 │   ├── buildSettingsXml()
 │   ├── buildManifestXml()
 │   └── buildContainerRdf()
-│
-└── appendTextWithBold()/appendTextWithBoldCustom() → inline.js에 추가
+├── converter  — writeHwpx() (JSZip으로 ZIP 패키징)
+└── previewData — PREVIEW_PNG base64
 ```
 
-**핵심 전략 — `build_header_xml` 단순화**:
+**XML 생성 전략**: 문자열 템플릿
+
 ```javascript
-// Python: ET.SubElement + 속성 딕셔너리 → 복잡한 DOM 조작
-// JS: 문자열 템플릿으로 직접 생성 (훨씬 간결)
-
-function buildBorderFill(id, borders, fillBrush) {
-  const edges = ['left','right','top','bottom'].map(side => {
-    const [type, width] = borders?.[side] || ['NONE', '0.1 mm'];
-    return `<hh:${side}Border type="${type}" width="${width}" color="#000000"/>`;
-  }).join('\n');
-
-  const fill = fillBrush
-    ? `<hc:fillBrush><hc:winBrush ${Object.entries(fillBrush).map(([k,v])=>`${k}="${v}"`).join(' ')}/></hc:fillBrush>`
-    : '';
-
-  return `<hh:borderFill id="${id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
-    <hh:slash type="NONE" Crooked="0" isCounter="0"/>
-    <hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
-    ${edges}
-    <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>
-    ${fill}
-  </hh:borderFill>`;
+// Python ET.SubElement 패턴 대신 문자열 조합
+function buildVersionXml() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version"
+  Major="1" Minor="4" Micro="0" BuildNumber="22"/>`;
 }
 ```
 
-**테스트**: 빈 Block 배열 → HWPX 생성 → 한글에서 열리는지 확인
+**테스트 방법**:
+```
+1. 브라우저 콘솔에서 convertMdToHwpx("") 실행
+2. .hwpx 다운로드
+3. 한글에서 열기 → 빈 페이지가 보이면 성공 ✅
+```
+
+**이 Phase가 가장 중요** — 여기서 header.xml(폰트/스타일/테두리)이 맞으면,
+이후 Phase는 section0.xml에 문단을 추가하는 것뿐이라 상대적으로 안전.
+
+**리스크 집중 지점**:
+- borderFill 42개 정의 (반복 패턴 → 헬퍼 함수로 생성)
+- charPr 32개 정의 (반복 패턴)
+- paraPr ~20개 정의
+- 네임스페이스 선언 누락 시 한글이 거부
 
 ---
 
-### Phase 4: 렌더러 — 표/문단 (Day 5-6)
+### Phase 2: 텍스트 문단 렌더링 (Day 3)
 
-**목표**: 제목표, 강조표, 일반표, 요약표 렌더링
-
-```
-작업:
-├── textFitting.js
-│   ├── TABLE_FIT_CHAR_IDS, FIT_CANDIDATES
-│   ├── visualTextWidth(text)
-│   ├── estimateLineCount(text, width, fontSize)
-│   ├── fitCellText(text, colWidthHwp, ...)
-│   └── computeColWidths(rows, totalWidth)
-│
-├── tables.js
-│   ├── createTableRow(tbl, { height, cells })
-│   ├── appendTitleTable(root, block, ...)
-│   ├── appendEmphasisTable(root, block, ...)
-│   ├── appendMarkdownTable(root, tableBlock, ...) ← 270줄
-│   └── appendSummaryTable(root, summaryBlock, ...) ← 165줄
-│
-└── inline.js 보강
-    ├── appendTextWithBold(paragraph, charId, text)
-    └── appendTextWithBoldCustom(paragraph, charId, text, boldCharId)
-```
-
-**테스트**: `STANDARD_TEST.md` → Python 출력과 XML byte-diff 비교
-
----
-
-### Phase 5: 렌더러 — 프로세스/도식도 (Day 7)
-
-**목표**: 프로세스 흐름도, 도식도 렌더링
+**목표**: 제목/소제목/본문/설명 등 **텍스트 블록**을 렌더링
 
 ```
-작업:
-├── processDiagram.js
-│   ├── appendProcessTable(root, processBlock, ...) ← 270줄
-│   │   ├── 단계별 셀 (제목행 + 설명행)
-│   │   ├── 화살표 셀 (→)
-│   │   └── 2행 머지
-│   │
-│   └── appendDiagramTable(root, diagramBlock, ...) ← 300줄
-│       ├── 박스 셀 (제목 + 설명)
-│       ├── 연결 화살표 (↓, ↔)
-│       └── 좌우 배치 (↔ 시)
-│
-└── 테스트: test_diagram.md 변환 확인
+추가 모듈:
+├── parser     — parseMdLines() (전체 파서)
+├── inline     — splitBoldSegments(), stripBoldMarkup(),
+│                appendTextWithBold(), buildPreviewText()
+└── xmlBuilder 보강
+    ├── buildSection0Xml() 업그레이드
+    │   ├── 일반 문단 (SUBTITLE, BODY, DESC2, DESC3, PLAIN)
+    │   ├── Bold 텍스트 처리 (**굵게**)
+    │   ├── 스페이서 문단 (블록 간 간격)
+    │   └── 머리말/꼬리말 (appendHeaderFooterCtrl)
+    └── buildDocumentMetadata()
+```
+
+**테스트 방법**:
+```
+1. 간단한 MD 텍스트로 변환:
+   <주제목>테스트 문서
+
+   □ 소제목입니다
+   ◦ 본문 내용
+   - 설명 레벨2
+
+2. .hwpx 다운로드 → 한글에서 열기
+3. 확인사항:
+   - 제목이 표 안에 잘 나오는가?
+   - 소제목/본문/설명의 글꼴과 크기가 맞는가?
+   - Bold 텍스트(**굵게**)가 적용되는가?
+   - 머리말/꼬리말이 보이는가?
 ```
 
 ---
 
-### Phase 6: 통합 + 단일 HTML 패키징 (Day 8)
+### Phase 3: 표 렌더링 (Day 4-5)
 
-**목표**: 모든 모듈 통합, 단일 HTML 파일로 배포
+**목표**: 마크다운 표, 제목표, 강조표, 요약표 렌더링
+
+```
+추가 모듈:
+├── textFitting — visualTextWidth(), fitCellText(), computeColWidths()
+└── tables      — createTableRow(), appendTitleTable(),
+                  appendEmphasisTable(), appendMarkdownTable(),
+                  appendSummaryTable()
+```
+
+**테스트 방법**:
+```
+1. STANDARD_TEST.md로 변환
+2. .hwpx 다운로드 → 한글에서 열기
+3. 확인사항:
+   - 표 테두리가 정상인가?
+   - 열 너비가 자동 조절되는가?
+   - 헤더 행 배경색(연보라)이 맞는가?
+   - 강조 상자(연두 배경)가 맞는가?
+4. Python 출력과 나란히 비교
+```
+
+---
+
+### Phase 4: 프로세스/도식도 렌더링 (Day 6)
+
+**목표**: 프로세스 흐름도, 도식도 블록 렌더링
+
+```
+추가 모듈:
+└── processDiagram — appendProcessTable(), appendDiagramTable()
+```
+
+**테스트 방법**:
+```
+1. test_diagram.md로 변환
+2. .hwpx 다운로드 → 한글에서 열기
+3. 확인사항:
+   - 프로세스 단계 (제목행 파란배경 + 설명행 흰배경)
+   - 화살표(→)가 2행 병합 셀에 맞는가?
+   - 도식도 ↔ 좌우 배치가 정상인가?
+   - ↓ 화살표 연결이 맞는가?
+4. Python 출력과 나란히 비교
+```
+
+---
+
+### Phase 5: UI + 단일 HTML 패키징 (Day 7)
+
+**목표**: 웹 UI 연결, 최종 단일 HTML 파일 생성
 
 ```
 작업:
-├── converter.js — ZIP 패키징
-│   ├── writeHwpx(blocks) → JSZip 사용
-│   │   ├── mimetype (ZIP_STORED)
-│   │   ├── version.xml, settings.xml
-│   │   ├── Preview/PrvText.txt, PrvImage.png
-│   │   ├── META-INF/manifest.xml, container.xml, container.rdf
-│   │   └── Contents/header.xml, section0.xml, content.hpf
-│   └── convertMdToHwpx(mdText) → Blob
-│
-├── UI 연결
-│   ├── 파일 드래그&드롭 (기존 run_web.py HTML 재사용)
-│   ├── FileReader로 .md 읽기
-│   ├── convertMdToHwpx() 호출
+├── UI (기존 run_web.py HTML 재사용)
+│   ├── 드래그&드롭 → FileReader로 .md 읽기
+│   ├── convertMdToHwpx(mdText) 호출 (서버 통신 제거)
 │   ├── Blob → 자동 다운로드
-│   └── 진행상태 표시
+│   └── 진행상태/에러 표시
 │
 ├── 단일 파일 패키징
 │   ├── JSZip minified 인라인 삽입
@@ -250,123 +207,151 @@ function buildBorderFill(id, borders, fillBrush) {
 │   └── 모든 JS 모듈 → <script> 블록 하나로 연결
 │
 └── 최종 테스트
-    ├── STANDARD_TEST.md → Python 출력과 diff
-    ├── test_diagram.md → Python 출력과 diff
-    └── 실제 업무 문서 테스트
+    ├── STANDARD_TEST.md → Python 출력과 한글에서 비교
+    ├── test_diagram.md → Python 출력과 한글에서 비교
+    ├── 실제 업무 문서 변환 테스트
+    └── 파일 이름에 한글이 포함된 경우
 ```
 
 ---
 
-## 함수 매핑표 (Python → JavaScript)
+## Python → JavaScript 모듈 매핑
 
-| Python 모듈 | Python 함수 | JS 함수 | 비고 |
-|---|---|---|---|
-| **models** | `BlockType` (Enum) | `BlockType` (const obj) | |
-| | `Block` (dataclass) | `class Block` | |
-| | `TableBlock` | `class TableBlock` | |
-| | `DocumentMetadata` | `class DocumentMetadata` | |
-| **config** | `_load_config()` | (제거) | JS 객체 직접 사용 |
-| | `_build_style_maps()` | `buildStyleMaps()` | |
-| | `_q(prefix, tag)` | `q(prefix, tag)` | |
-| | `mm_to_hwp(mm)` | `mmToHwp(mm)` | |
-| | `_attach_secpr(run)` | `attachSecPr()` | 문자열 반환 |
-| **inline** | `_split_bold_segments()` | `splitBoldSegments()` | |
-| | `_strip_bold_markup()` | `stripBoldMarkup()` | |
-| | `_append_text_with_bold()` | `appendTextWithBold()` | |
-| | `_build_preview_text()` | `buildPreviewText()` | |
-| **text_fitting** | `_visual_text_width()` | `visualTextWidth()` | |
-| | `_estimate_line_count()` | `estimateLineCount()` | |
-| | `_fit_cell_text()` | `fitCellText()` | |
-| | `_compute_col_widths()` | `computeColWidths()` | |
-| **tables** | `_create_table_row()` | `createTableRow()` | |
-| | `_append_title_table()` | `appendTitleTable()` | |
-| | `_append_emphasis_table()` | `appendEmphasisTable()` | |
-| | `_append_markdown_table()` | `appendMarkdownTable()` | |
-| | `_append_summary_table()` | `appendSummaryTable()` | |
-| **process_diagram** | `_append_process_table()` | `appendProcessTable()` | |
-| | `_append_diagram_table()` | `appendDiagramTable()` | |
-| **parser** | `parse_md_lines()` | `parseMdLines()` | |
-| **xml_builder** | `build_header_xml()` | `buildHeaderXml()` | 문자열 반환 |
-| | `build_section0_xml()` | `buildSection0Xml()` | 문자열 반환 |
-| | `build_content_hpf()` | `buildContentHpf()` | |
-| | `build_container_xml()` | `buildContainerXml()` | |
-| | `build_version_xml()` | `buildVersionXml()` | |
-| | `build_settings_xml()` | `buildSettingsXml()` | |
-| | `build_manifest_xml()` | `buildManifestXml()` | |
-| | `build_container_rdf()` | `buildContainerRdf()` | |
-| | `_build_document_metadata()` | `buildDocumentMetadata()` | |
-| **md_to_hwpx** | `write_hwpx()` | `writeHwpx()` | JSZip |
-| | `convert_md_to_hwpx()` | `convertMdToHwpx()` | |
+### 소스 구조 대응표
+
+| # | Python 모듈 | 줄 수 | JS 도입 Phase | 변환 난이도 |
+|---|---|---|---|---|
+| 1 | `models.py` | 92 | Phase 1 | ⭐ 쉬움 |
+| 2 | `config.py` | 390 | Phase 1 | ⭐⭐ 중간 |
+| 3 | `preview_data.py` | 335 | Phase 1 | ⭐ 쉬움 (복사) |
+| 4 | `xml_builder.py` | 1,497 | Phase 1~2 | ⭐⭐⭐⭐ 최대 |
+| 5 | `md_to_hwpx.py` | 121 | Phase 1 | ⭐ 쉬움 |
+| 6 | `parser.py` | 307 | Phase 2 | ⭐⭐ 중간 |
+| 7 | `renderers/inline.py` | 120 | Phase 2 | ⭐ 쉬움 |
+| 8 | `renderers/text_fitting.py` | 242 | Phase 3 | ⭐⭐ 중간 |
+| 9 | `renderers/tables.py` | 743 | Phase 3 | ⭐⭐⭐ 어려움 |
+| 10 | `renderers/process_diagram.py` | 636 | Phase 4 | ⭐⭐⭐ 어려움 |
+
+### 함수 매핑표
+
+| Python 함수 | JS 함수 | Phase |
+|---|---|---|
+| `BlockType` (Enum) | `BlockType` (const) | 1 |
+| `Block` (dataclass) | `class Block` | 1 |
+| `_q(prefix, tag)` | `q(prefix, tag)` | 1 |
+| `mm_to_hwp(mm)` | `mmToHwp(mm)` | 1 |
+| `_attach_secpr()` | `attachSecPr()` | 1 |
+| `build_header_xml()` | `buildHeaderXml()` | 1 |
+| `build_section0_xml()` | `buildSection0Xml()` | 1→2 |
+| `build_content_hpf()` | `buildContentHpf()` | 1 |
+| `build_*_xml()` (5개) | `build*Xml()` | 1 |
+| `write_hwpx()` | `writeHwpx()` | 1 |
+| `parse_md_lines()` | `parseMdLines()` | 2 |
+| `_split_bold_segments()` | `splitBoldSegments()` | 2 |
+| `_append_text_with_bold()` | `appendTextWithBold()` | 2 |
+| `_build_preview_text()` | `buildPreviewText()` | 2 |
+| `_visual_text_width()` | `visualTextWidth()` | 3 |
+| `_fit_cell_text()` | `fitCellText()` | 3 |
+| `_compute_col_widths()` | `computeColWidths()` | 3 |
+| `_create_table_row()` | `createTableRow()` | 3 |
+| `_append_title_table()` | `appendTitleTable()` | 3 |
+| `_append_markdown_table()` | `appendMarkdownTable()` | 3 |
+| `_append_summary_table()` | `appendSummaryTable()` | 3 |
+| `_append_process_table()` | `appendProcessTable()` | 4 |
+| `_append_diagram_table()` | `appendDiagramTable()` | 4 |
 
 ---
 
 ## 기술 결정사항
 
-### XML 생성: 문자열 템플릿 방식 ✅
+### XML 생성: 문자열 템플릿 ✅
 
+```javascript
+// 이유: HWPX XML은 구조가 고정적 → 문자열이 가장 단순
+// Python ET.SubElement(parent, tag, attribs) 패턴을
+// JS 문자열 조합으로 1:1 변환
+
+function buildBorderFill(id, borders = {}, fillBrush = null) {
+  const edge = (side) => {
+    const [type, width] = borders[side] || ['NONE', '0.1 mm'];
+    return `<hh:${side}Border type="${type}" width="${width}" color="#000000"/>`;
+  };
+  const fill = fillBrush
+    ? `<hc:fillBrush><hc:winBrush ${
+        Object.entries(fillBrush).map(([k,v]) => `${k}="${v}"`).join(' ')
+      }/></hc:fillBrush>`
+    : '';
+
+  return `<hh:borderFill id="${id}" threeD="0" shadow="0"
+    centerLine="NONE" breakCellSeparateLine="0">
+  <hh:slash type="NONE" Crooked="0" isCounter="0"/>
+  <hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
+  ${edge('left')}${edge('right')}${edge('top')}${edge('bottom')}
+  <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>
+  ${fill}
+</hh:borderFill>`;
+}
 ```
-이유:
-1. HWPX XML 구조는 고정적 (동적 DOM 조작 불필요)
-2. Python ET.SubElement 패턴 → 문자열이 1:1 대응으로 더 단순
-3. 디버깅 용이 (생성된 XML을 그대로 볼 수 있음)
-4. 성능 우수 (DOM 파싱 없음)
 
-단점:
-- 특수문자 이스케이프 주의 (< > & " → &lt; &gt; &amp; &quot;)
-- 들여쓰기 관리 필요
-```
-
-### ZIP: JSZip (v3, MIT) ✅
+### ZIP: JSZip v3 (MIT) ✅
 
 ```javascript
 const zip = new JSZip();
 zip.file("mimetype", "application/hwp+zip", { compression: "STORE" });
 zip.file("Contents/header.xml", headerXml);
-// ...
 const blob = await zip.generateAsync({ type: "blob" });
 ```
 
 ### 스타일 설정: JS 직접 정의 ✅
 
 ```javascript
-// core_styles.yaml 내용을 JS 객체로 하드코딩
 const CONFIG = {
   hwpPerMm: 283.46,
   page: { widthMm: 210, heightMm: 297, ... },
   styles: {
     title: { styleId: 14, paraPrId: 14, charPrId: 5 },
     body:  { styleId: 5,  paraPrId: 5,  charPrId: 0 },
-    // ...
   },
-  spacers: { ... },
 };
 ```
 
 ---
 
-## 검증 전략
+## 검증 체크리스트
 
-### Byte-level 비교
+### Phase 1 검증 (빈 문서)
+- [ ] .hwpx가 생성되는가?
+- [ ] 한글에서 오류 없이 열리는가?
+- [ ] 빈 페이지가 표시되는가?
+- [ ] 페이지 크기/여백이 Python 출력과 동일한가?
 
-```bash
-# 1) Python으로 변환
-python converter/md_to_hwpx.py samples/STANDARD_TEST.md /tmp/py_output.hwpx
+### Phase 2 검증 (텍스트)
+- [ ] <주제목>이 표 안에 렌더링되는가?
+- [ ] □ 소제목의 글꼴/크기가 맞는가?
+- [ ] ◦ 본문의 글꼴/크기가 맞는가?
+- [ ] **굵게** 텍스트가 적용되는가?
+- [ ] 머리말/꼬리말이 표시되는가?
+- [ ] 블록 간 간격(스페이서)이 맞는가?
 
-# 2) JS 웹버전으로 변환 → JS출력.hwpx
+### Phase 3 검증 (표)
+- [ ] 표 테두리 스타일이 맞는가?
+- [ ] 헤더 행 배경색(연보라)이 맞는가?
+- [ ] 열 너비가 자동 조절되는가?
+- [ ] 텍스트 피팅(자간/폰트 축소)이 동작하는가?
+- [ ] 강조 상자(연두 배경)가 맞는가?
+- [ ] 요약표가 맞는가?
 
-# 3) ZIP 풀어서 XML 비교
-unzip -o /tmp/py_output.hwpx -d /tmp/py_xml
-unzip -o /tmp/js_output.hwpx -d /tmp/js_xml
-diff -r /tmp/py_xml /tmp/js_xml
-```
+### Phase 4 검증 (프로세스/도식도)
+- [ ] 프로세스 단계 배경색(파란/흰)이 맞는가?
+- [ ] 화살표(→) 셀이 2행 병합되는가?
+- [ ] 도식도 ↔ 좌우 배치가 정상인가?
+- [ ] ↓ 화살표 연결이 맞는가?
 
-### 단계별 스냅샷 비교
-
-각 Phase 완료 시:
-1. 해당 모듈의 JS 출력과 Python 출력을 비교
-2. Phase 3 이후 — 빈 문서 HWPX → 한글 오픈 테스트
-3. Phase 4 이후 — STANDARD_TEST 전체 비교
-4. Phase 6 — 실 업무 문서로 최종 검증
+### Phase 5 검증 (최종)
+- [ ] 웹에서 .md 파일 드래그앤드롭이 동작하는가?
+- [ ] STANDARD_TEST.md 변환 결과가 Python과 동일한가?
+- [ ] test_diagram.md 변환 결과가 Python과 동일한가?
+- [ ] 실제 업무 문서가 정상 변환되는가?
 
 ---
 
@@ -374,46 +359,44 @@ diff -r /tmp/py_xml /tmp/js_xml
 
 | 리스크 | 확률 | 영향 | 완화 |
 |---|---|---|---|
-| XML 속성 오타/누락 → 한글 오류 | 중간 | 높음 | Python 출력과 byte-diff 비교 |
-| `buildHeaderXml` 대규모 변환 실수 | 중간 | 높음 | 반복 패턴을 헬퍼 함수로 추출 |
-| 한글 텍스트 인코딩 | 낮음 | 중간 | JS 네이티브 Unicode, UTF-8 출력 |
-| 큰 파일 메모리 | 낮음 | 낮음 | 일반 보고서 기준 문제 없음 |
-| JSZip mimetype 순서 | 중간 | 높음 | `compression: "STORE"` + 첫 파일 등록 |
+| header.xml 속성 누락 → 한글 거부 | 중간 | 높음 | **Phase 1에서 빈 문서로 즉시 검증** |
+| 네임스페이스 오타 | 중간 | 높음 | Python XML 출력과 diff 비교 |
+| borderFill/charPr 반복 변환 실수 | 중간 | 중간 | 헬퍼 함수로 패턴 추출 |
+| 한글 텍스트 인코딩 | 낮음 | 중간 | JS UTF-8 네이티브 |
+| JSZip mimetype 순서 | 중간 | 높음 | 첫 파일로 STORE 등록 |
+| 표 렌더링 미세 차이 | 높음 | 낮음 | Phase 3에서 조기 발견 |
 
 ---
 
 ## 예상 일정
 
-| Phase | 일수 | 누적 | 설명 |
+| Phase | 작업 | 일수 | 검증 |
 |---|---|---|---|
-| 1 기반+설정 | 1일 | 1일 | HTML, models, config, preview |
-| 2 파서+인라인 | 1일 | 2일 | parser, inline |
-| 3 XML 핵심 | 2일 | 4일 | xmlBuilder (최대 작업) |
-| 4 표 렌더러 | 2일 | 6일 | textFitting, tables, inline 보강 |
-| 5 프로세스/도식도 | 1일 | 7일 | processDiagram |
-| 6 통합+패키징 | 1일 | 8일 | converter, UI, 단일 HTML |
-| | **총 8일** | | |
+| 1 | 빈 문서 HWPX 생성 | 2일 | 한글에서 열기 ✅ |
+| 2 | 텍스트 문단 렌더링 | 1일 | 한글에서 확인 ✅ |
+| 3 | 표 렌더링 | 2일 | 한글에서 확인 ✅ |
+| 4 | 프로세스/도식도 | 1일 | 한글에서 확인 ✅ |
+| 5 | UI + 단일 HTML | 1일 | 웹 동작 확인 ✅ |
+| | **총 7일** | | **매 단계 한글 검증** |
 
 ---
 
-## 파일 구조 (개발 중)
+## 파일 구조
 
 ```
 dist_lite/web_version/
 ├── PLAN.md              ← 이 문서
 ├── MD변환기.html         ← 최종 산출물 (단일 파일)
-└── dev/                 ← 개발용 분리 파일 (완성 후 merge)
-    ├── index.html       ← UI + 모듈 로딩
-    ├── models.js
-    ├── config.js
-    ├── parser.js
-    ├── inline.js
-    ├── textFitting.js
-    ├── tables.js
-    ├── processDiagram.js
-    ├── xmlBuilder.js
-    └── converter.js
+└── dev/                 ← 개발용 (완성 후 merge)
+    ├── index.html       ← 테스트 UI (콘솔 + 다운로드 버튼)
+    ├── models.js        ← Phase 1
+    ├── config.js        ← Phase 1
+    ├── previewData.js   ← Phase 1
+    ├── xmlBuilder.js    ← Phase 1~2
+    ├── converter.js     ← Phase 1
+    ├── parser.js        ← Phase 2
+    ├── inline.js        ← Phase 2
+    ├── textFitting.js   ← Phase 3
+    ├── tables.js        ← Phase 3
+    └── processDiagram.js ← Phase 4
 ```
-
-개발 중에는 `dev/` 안에서 ES 모듈(`import/export`)로 작업하고,
-최종 배포 시 하나의 `MD변환기.html`로 합침.
