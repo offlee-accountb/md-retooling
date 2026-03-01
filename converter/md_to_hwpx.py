@@ -140,7 +140,15 @@ class DocumentMetadata:
 # ---------------------------------------------------------------------------
 
 def _build_style_maps() -> tuple:
-    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성."""
+    """CONFIG에서 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP 생성.
+
+    **스타일 통일 전략**:
+    일반 텍스트 문단(SUBTITLE, BODY, DESC2, DESC3, PLAIN)은 모두 BODY의
+    styleIDRef / paraPrIDRef를 공유한다. 이렇게 하면 한글에서 백스페이스로
+    문단을 합칠 때 폰트가 바뀌는 문제를 방지할 수 있다.
+    TITLE과 EMPHASIS는 표 안에서 렌더링되므로 별도 styleIDRef 유지 가능.
+    시각적 차이(폰트, 크기)는 charPrIDRef(run 레벨)로만 제어한다.
+    """
     # BlockType 이름 → YAML 키 매핑
     block_to_yaml = {
         BlockType.TITLE: "title",
@@ -151,11 +159,11 @@ def _build_style_maps() -> tuple:
         BlockType.EMPHASIS: "emphasis",
         BlockType.PLAIN: "plain",
     }
-    
+
     para_map = {}
     char_map = {}
     style_map = {}
-    
+
     for block_type, yaml_key in block_to_yaml.items():
         style = CONFIG.get_style(yaml_key)
         if style:
@@ -167,7 +175,18 @@ def _build_style_maps() -> tuple:
             para_map[block_type] = "0"
             char_map[block_type] = "0"
             style_map[block_type] = "0"
-    
+
+    # --- 스타일 통일: 일반 텍스트 문단은 BODY 기준으로 통일 ---
+    # TITLE/EMPHASIS는 표 안이므로 제외
+    body_style = CONFIG.get_style("body")
+    if body_style:
+        unified_style_id = str(body_style.style_id)
+        unified_para_id = str(body_style.para_pr_id)
+        for bt in (BlockType.SUBTITLE, BlockType.BODY, BlockType.DESC2,
+                    BlockType.DESC3, BlockType.PLAIN):
+            style_map[bt] = unified_style_id
+            para_map[bt] = unified_para_id
+
     return para_map, char_map, style_map
 
 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
@@ -1308,10 +1327,15 @@ def _append_header_footer_ctrl(root: ET.Element, header_text: str, footer_text: 
             t.tail = header_text
 
     # 2) Footer: 첫 번째 SUBTITLE 문단 안에 footer ctrl run을 prepend
+    #    스타일 통일 후 paraPrIDRef로 구분 불가 → run의 charPrIDRef로 식별
+    subtitle_char_id = RUN_CHAR_OVERRIDE_MAP[BlockType.SUBTITLE]
     first_subtitle_p = None
     for p in root.findall(_q("hp", "p")):
-        if p.get("paraPrIDRef") == PARA_STYLE_MAP[BlockType.SUBTITLE]:
-            first_subtitle_p = p
+        for run_el in p.findall(_q("hp", "run")):
+            if run_el.get("charPrIDRef") == subtitle_char_id:
+                first_subtitle_p = p
+                break
+        if first_subtitle_p is not None:
             break
 
     if first_subtitle_p is not None:
