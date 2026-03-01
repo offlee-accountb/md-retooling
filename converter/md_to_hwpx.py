@@ -2682,7 +2682,9 @@ def _append_diagram_table(
     col_cnt = max_boxes * 2 - 1 if max_boxes > 1 else 1
 
     total_width = int(TABLE_WIDTH_HWP)
-    gap_col_width = 800  # 박스 간 간격 (~2.7mm)
+    # ↔ 좌우비교형이 있으면 간격 열을 넓게 잡음
+    has_lr = bool(lr_split_at)
+    gap_col_width = 3000 if has_lr else 800  # ↔: ~10.6mm, ↓: ~2.7mm
     n_gap_cols = max_boxes - 1 if max_boxes > 1 else 0
     remaining = total_width - (n_gap_cols * gap_col_width)
     box_col_width = remaining // max_boxes if max_boxes > 0 else total_width
