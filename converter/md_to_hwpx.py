@@ -833,6 +833,9 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         stripped = line.lstrip(" ")
         leading_spaces = len(line) - len(stripped)
 
+        # 마크다운 헤더 접두사 (###, ##, #) 제거 — 커스텀 마커가 인식되도록
+        stripped = re.sub(r'^#{1,6}\s+', '', stripped)
+
         # 도식도
         diagram_block, next_idx = _parse_diagram_block(i, line_list)
         if diagram_block is not None:
@@ -3514,6 +3517,8 @@ def build_header_xml() -> bytes:
         (29, 1000, 2, True, -10),  # 10pt Bold spacing -10%
         (30, 1000, 2, True, -15),  # 10pt Bold spacing -15%
         (31, 1000, 2, True, -20),  # 10pt Bold spacing -20%
+        # --- 제목/소제목 inline bold용 (HY헤드라인M) ---
+        (32, 1500, 0, True, 0),    # HY헤드라인M 15pt Bold (소제목/제목 bold)
     ]
     for cid, height, font_id, is_bold, sp in char_defs:
         add_char_pr(cid, height, font_id, bold=is_bold, spacing=sp)
@@ -3846,13 +3851,17 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
         spacer_char_id = SPACER_CHAR_MAP.get(block.type)
         if spacer_char_id is not None:
             spacer_marker = SPACER_MARKER_MAP.get(block.type, "↕↕")
+            # spacer에도 뒤따르는 블록의 style/paraPr를 부여하여
+            # 백스페이스로 합쳐질 때 글꼴이 초기화되지 않도록 한다.
+            spacer_style_id = STYLE_ID_MAP.get(block.type, "0")
+            spacer_para_id = PARA_STYLE_MAP.get(block.type, "0")
             p = ET.SubElement(
                 root,
                 _q("hp", "p"),
                 {
                     "id": str(p_id),
-                    "paraPrIDRef": "0",
-                    "styleIDRef": "0",
+                    "paraPrIDRef": spacer_para_id,
+                    "styleIDRef": spacer_style_id,
                     "pageBreak": "0",
                     "columnBreak": "0",
                     "merged": "0",
@@ -3916,7 +3925,11 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
         else:
             text_content = block.text
 
-        _append_text_with_bold(p, char_id, text_content)
+        # 제목/소제목은 HY헤드라인M Bold charPr을 사용
+        if block.type in (BlockType.TITLE, BlockType.SUBTITLE):
+            _append_text_with_bold_custom(p, char_id, text_content, "32")
+        else:
+            _append_text_with_bold(p, char_id, text_content)
 
         p_id += 1
 
