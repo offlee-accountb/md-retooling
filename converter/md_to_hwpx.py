@@ -161,7 +161,17 @@ def _build_style_maps() -> tuple:
     
     return para_map, char_map, style_map
 
-PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
+PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, _CONFIG_STYLE_ID_MAP = _build_style_maps()
+
+# Paragraph styles are intentionally unified as "바탕글" (style id 0).
+#
+# HWP/HWPX editors can carry paragraph style state across manual edits. If
+# generated 제목/본문 paragraphs use different style IDs, pressing Backspace at
+# a paragraph boundary can unexpectedly switch the text font/style. The
+# converter therefore keeps paragraph layout in paraPrIDRef and applies visual
+# font differences only through run-level charPrIDRef.
+UNIFIED_PARAGRAPH_STYLE_ID = "0"
+STYLE_ID_MAP = {block_type: UNIFIED_PARAGRAPH_STYLE_ID for block_type in PARA_STYLE_MAP}
 
 INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
 INLINE_BOLD_CHAR_BY_BASE_ID = {
@@ -224,8 +234,8 @@ HEADER_PARA_ID = _HF_IDS["header_para"]
 FOOTER_PARA_ID = _HF_IDS["footer_para"]
 HEADER_CHAR_ID = _HF_IDS["header_char"]
 FOOTER_CHAR_ID = _HF_IDS["footer_char"]
-HEADER_STYLE_ID = _HF_IDS["header_style"]
-FOOTER_STYLE_ID = _HF_IDS["footer_style"]
+HEADER_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
+FOOTER_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
 
 # Table-specific style IDs (TODO: migrate to CONFIG.tables.styles)
 TABLE_TITLE_PARA_ID = "14"
@@ -234,11 +244,11 @@ TABLE_BODY_PARA_ID = "16"
 SUMMARY_TABLE_PARA_ID = "17"   # 단일 셀 wrapper
 SUMMARY_BODY_PARA_ID = "18"
 SUMMARY_DESC_PARA_ID = "19"
-TABLE_TITLE_STYLE_ID = "14"
-TABLE_HEADER_STYLE_ID = "15"
-TABLE_BODY_STYLE_ID = "16"
-SUMMARY_BODY_STYLE_ID = "17"
-SUMMARY_DESC_STYLE_ID = "18"
+TABLE_TITLE_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
+TABLE_HEADER_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
+TABLE_BODY_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
+SUMMARY_BODY_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
+SUMMARY_DESC_STYLE_ID = UNIFIED_PARAGRAPH_STYLE_ID
 TABLE_BODY_CHAR_ID = "11"
 TABLE_HEADER_CHAR_ID = "12"
 
@@ -2051,7 +2061,7 @@ def _append_diagram_table(
         {
             "id": str(p_id),
             "paraPrIDRef": "2",  # 소제목 스타일
-            "styleIDRef": "2",
+            "styleIDRef": UNIFIED_PARAGRAPH_STYLE_ID,
             "pageBreak": "0",
             "columnBreak": "0",
             "merged": "0",
@@ -3236,7 +3246,8 @@ def build_header_xml() -> bytes:
         para_head = ET.SubElement(numbering, _q("hh", "paraHead"), attrs)
         para_head.text = lvl["text"]
 
-    # styles: BlockType별 문단 스타일 정의
+    # styles: 문단 스타일은 바탕글 하나만 둔다.
+    # 제목/본문/표의 시각 차이는 각 문단의 paraPrIDRef와 run charPrIDRef로만 적용한다.
     styles = ET.SubElement(ref_list, _q("hh", "styles"), {"itemCnt": "0"})
 
     def add_style(style_id: int, name: str, eng_name: str, para_ref: int, char_ref: int) -> None:
@@ -3256,27 +3267,7 @@ def build_header_xml() -> bytes:
             },
         )
 
-    style_defs = [
-        (0, "바탕글", "Normal", 0, 0),
-        (1, "주제목", "MainTitle", 1, 5),
-        (2, "소제목", "SubTitle", 2, 6),
-        (3, "본문", "Body", 9, 0),
-        (4, "설명2", "Desc2", 8, 0),
-        (5, "설명3", "Desc3", 10, 7),
-        (6, "강조", "Emphasis", 6, 8),
-        (7, "예비제목", "ReserveHeading", 7, 5),
-        (8, "예비본문A", "ReserveBodyA", 8, 0),
-        (9, "예비본문B", "ReserveBodyB", 9, 7),
-        (10, "예비캡션", "ReserveCaption", 10, 7),
-        (11, "예비강조", "ReserveEmphasis", 11, 8),
-        (12, "머리말", "Header", int(HEADER_PARA_ID), int(HEADER_CHAR_ID)),
-        (13, "꼬리말", "Footer", int(FOOTER_PARA_ID), int(FOOTER_CHAR_ID)),
-        (14, "표제목", "TableTitle", int(TABLE_TITLE_PARA_ID), 7),
-        (15, "표헤더", "TableHeader", int(TABLE_HEADER_PARA_ID), int(TABLE_HEADER_CHAR_ID)),
-        (16, "표본문", "TableBody", int(TABLE_BODY_PARA_ID), int(TABLE_BODY_CHAR_ID)),
-        (17, "요약본문", "SummaryBody", int(SUMMARY_BODY_PARA_ID), 7),
-        (18, "요약설명", "SummaryDesc", int(SUMMARY_DESC_PARA_ID), int(TABLE_BODY_CHAR_ID)),
-    ]
+    style_defs = [(0, "바탕글", "Normal", 0, 0)]
     for sid, name, eng, para_ref, char_ref in style_defs:
         add_style(sid, name, eng, para_ref, char_ref)
     styles.set("itemCnt", str(len(style_defs)))
