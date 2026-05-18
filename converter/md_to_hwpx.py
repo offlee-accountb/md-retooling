@@ -61,7 +61,15 @@ class BlockType(Enum):
     EMPHASIS = auto()    # <강조>
     TABLE = auto()       # markdown table
     SUMMARY_TABLE = auto()  # <요약표> 전용
+    DIAGRAM = auto()     # <구조도> 전용
     PLAIN = auto()       # fallback / other
+
+
+class DiagramCellType(Enum):
+    """구조도 셀 타입."""
+    BOX = auto()         # [타이틀: 본문...] - 박스 셀 (보라색 헤더 + 흰색 본문)
+    ARROW = auto()       # →, ↓, ←, ↑ 등 - 화살표 셀 (투명)
+    EMPTY = auto()       # 빈 셀 (완전 투명)
 
 
 @dataclass
@@ -86,6 +94,22 @@ class SummaryTableBlock(Block):
     """요약표(<요약표 시작> ~ <요약표 끝>) 범위를 하나의 표로 묶는다."""
 
     items: List[Block]
+
+
+@dataclass
+class DiagramCell:
+    """구조도 단일 셀 정보."""
+    cell_type: DiagramCellType
+    title: str           # BOX인 경우 타이틀 (보라색 배경)
+    body_lines: List[str]  # BOX인 경우 본문 줄들
+    raw_text: str        # ARROW인 경우 화살표 문자
+
+
+@dataclass
+class DiagramBlock(Block):
+    """구조도(<구조도 제목:> ~ </구조도>) 블록."""
+    diagram_title: str
+    rows: List[List[DiagramCell]]  # 2D 그리드
 
 
 @dataclass
@@ -140,6 +164,16 @@ def _build_style_maps() -> tuple:
 PARA_STYLE_MAP, RUN_CHAR_OVERRIDE_MAP, STYLE_ID_MAP = _build_style_maps()
 
 INLINE_BOLD_CHAR_ID = RUN_CHAR_OVERRIDE_MAP[BlockType.EMPHASIS]
+INLINE_BOLD_CHAR_BY_BASE_ID = {
+    "0": "8",    # 본문/설명2: 휴먼명조 15pt -> 휴먼명조 15pt Bold
+    "5": "5",    # 주제목: HY헤드라인M 15pt Bold 유지
+    "6": "5",    # 소제목: HY헤드라인M 15pt -> HY헤드라인M 15pt Bold
+    "7": "13",   # 설명3: 맑은고딕 12pt -> 맑은고딕 12pt Bold
+    "8": "8",    # 강조: 휴먼명조 15pt Bold 유지
+    "11": "13",  # 표 본문: 맑은고딕 11pt -> 사용 가능한 맑은고딕 Bold
+    "12": "12",  # 표 헤더: 맑은고딕 11pt Bold 유지
+    "13": "13",  # 표/요약표 Bold 유지
+}
 
 # ---------------------------------------------------------------------------
 # Config-driven constants (from core_styles.yaml via CONFIG)
@@ -214,6 +248,17 @@ TITLE_TABLE_SPACER_BORDER_ID = "34"   # 연보라 배경 + 테두리 NONE
 TITLE_TABLE_BODY_BORDER_ID = "35"     # 테두리 NONE, 배경 없음
 EMPH_TABLE_BORDER_ID = "36"           # 연두 배경 + SOLID 테두리
 SUMMARY_TABLE_BORDER_ID = "37"        # 점선 테두리
+
+# 구조도 전용 borderFill IDs
+DIAGRAM_EMPTY_BORDER_ID = "38"        # 투명 셀 (테두리 없음, 배경 없음)
+DIAGRAM_ARROW_BORDER_ID = "39"        # 화살표 셀 (테두리 없음, 배경 없음)
+DIAGRAM_BOX_HEADER_BORDER_ID = "40"   # 박스 헤더 (흰색 배경, 테두리 SOLID) - 중앙정렬
+DIAGRAM_BOX_BODY_BORDER_ID = "41"     # 박스 본문 (흰색 배경, 테두리 SOLID) - 좌측정렬, 줄간격 130%
+DIAGRAM_OUTER_BORDER_ID = "42"        # 구조도 외곽 테두리
+
+# 구조도 전용 paraPr IDs
+DIAGRAM_HEADER_PARA_ID = "20"         # 박스 헤더: 중앙정렬, 글자크기 12pt
+DIAGRAM_BODY_PARA_ID = "21"           # 박스 본문: 좌측정렬, 줄간격 130%
 
 # Spacer paragraph mapping: CONFIG.spacers에서 동적 생성
 def _build_spacer_char_map():
@@ -673,6 +718,106 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         )
         return summ, j
 
+    def _parse_diagram_cell(cell_text: str) -> DiagramCell:
+        """단일 셀 텍스트를 파싱하여 DiagramCell 반환."""
+        cell_text = cell_text.strip()
+        
+        # 화살표 셀 감지 (→, ←, ↑, ↓, ↔, ⇒, ⇐, ▶, ◀ 등)
+        arrow_chars = {"→", "←", "↑", "↓", "↔", "⇒", "⇐", "⇔", "▶", "◀", "▲", "▼", 
+                       "─→", "←─", "│↓", "↑│", "──→", "←──", "───→", "←───"}
+        if cell_text in arrow_chars or (len(cell_text) <= 3 and any(c in cell_text for c in "→←↑↓↔⇒⇐⇔▶◀▲▼")):
+            return DiagramCell(
+                cell_type=DiagramCellType.ARROW,
+                title="",
+                body_lines=[],
+                raw_text=cell_text,
+            )
+        
+        # 빈 셀
+        if not cell_text:
+            return DiagramCell(
+                cell_type=DiagramCellType.EMPTY,
+                title="",
+                body_lines=[],
+                raw_text="",
+            )
+        
+        # 박스 셀: [타이틀: 본문1, 본문2] 또는 [타이틀]
+        box_match = re.match(r"^\[(.+?)\]$", cell_text)
+        if box_match:
+            content = box_match.group(1)
+            if ":" in content:
+                parts = content.split(":", 1)
+                title = parts[0].strip()
+                body_parts = [b.strip() for b in parts[1].split(",")]
+                body_lines = [f"· {b}" for b in body_parts if b]
+            else:
+                title = content.strip()
+                body_lines = []
+            return DiagramCell(
+                cell_type=DiagramCellType.BOX,
+                title=title,
+                body_lines=body_lines,
+                raw_text=cell_text,
+            )
+        
+        # 기타: 일반 텍스트 → 박스로 처리 (타이틀만)
+        return DiagramCell(
+            cell_type=DiagramCellType.BOX,
+            title=cell_text,
+            body_lines=[],
+            raw_text=cell_text,
+        )
+
+    def _parse_diagram_block(idx: int, line_list: List[str]) -> tuple[DiagramBlock | None, int]:
+        """<구조도 제목: ...> ~ </구조도> 블록 파싱."""
+        title_match = re.match(r"^<\s*구조도\s*제목\s*:\s*(.+?)>\s*$", line_list[idx].strip())
+        if not title_match:
+            return None, idx
+        
+        diagram_title = title_match.group(1).strip()
+        rows: List[List[DiagramCell]] = []
+        j = idx + 1
+        
+        while j < len(line_list):
+            ln = line_list[j].strip()
+            
+            # 종료 태그
+            if ln.replace(" ", "") == "</구조도>":
+                j += 1
+                break
+            
+            # 빈 줄 건너뛰기
+            if not ln:
+                j += 1
+                continue
+            
+            # 표 행 파싱 (| cell1 | cell2 | ... |)
+            if ln.startswith("|"):
+                # 구분선 건너뛰기 (|---|---|)
+                if re.match(r"^\|[\s\-:]+\|", ln):
+                    j += 1
+                    continue
+                
+                # 셀 분리
+                cells_raw = ln.strip().strip("|").split("|")
+                row_cells = [_parse_diagram_cell(c) for c in cells_raw]
+                rows.append(row_cells)
+            
+            j += 1
+        
+        if not rows:
+            return None, idx
+        
+        diagram = DiagramBlock(
+            type=BlockType.DIAGRAM,
+            raw="\n".join(line_list[idx:j]),
+            text=diagram_title,
+            diagram_title=diagram_title,
+            rows=rows,
+        )
+        return diagram, j
+
     blocks: List[Block] = []
     line_list = [_normalize_line(ln) for ln in lines]
     i = 0
@@ -680,6 +825,13 @@ def parse_md_lines(lines: Iterable[str]) -> List[Block]:
         line = line_list[i]
         stripped = line.lstrip(" ")
         leading_spaces = len(line) - len(stripped)
+
+        # 구조도
+        diagram_block, next_idx = _parse_diagram_block(i, line_list)
+        if diagram_block is not None:
+            blocks.append(diagram_block)
+            i = next_idx
+            continue
 
         # 요약표
         summary_block, next_idx = _parse_summary_block(i, line_list)
@@ -768,7 +920,8 @@ def _split_bold_segments(text: str) -> List[tuple[str, bool]]:
 
 
 def _append_text_with_bold(paragraph: ET.Element, base_char_id: str | None, full_text: str) -> None:
-    _append_text_with_bold_custom(paragraph, base_char_id, full_text, INLINE_BOLD_CHAR_ID)
+    bold_char_id = INLINE_BOLD_CHAR_BY_BASE_ID.get(str(base_char_id), INLINE_BOLD_CHAR_ID)
+    _append_text_with_bold_custom(paragraph, base_char_id, full_text, bold_char_id)
 
 
 def _append_text_with_bold_custom(
@@ -803,7 +956,7 @@ def _strip_bold_markup(text: str) -> str:
 def _format_block_preview_text(block: Block) -> Optional[str]:
     if not block.text:
         return None
-    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE):
+    if block.type in (BlockType.TABLE, BlockType.SUMMARY_TABLE, BlockType.DIAGRAM):
         return None
     if block.type == BlockType.TITLE:
         return None
@@ -1873,6 +2026,415 @@ def _append_summary_table(
     )
 
     return p_counter, table_id + 1, secpr_attached
+
+
+def _append_diagram_table(
+    parent: ET.Element, block: DiagramBlock, *, table_id: int, p_id: int, secpr_attached: bool
+) -> tuple[int, int, bool]:
+    """구조도 블록을 표 형태로 렌더링한다.
+    
+    구조도는 중첩 표 방식:
+    - 바깥 표: 전체 구조도를 감싸는 외곽 테두리
+    - 각 셀: BOX는 내부에 2행 표(헤더+본문), ARROW/EMPTY는 텍스트만
+    """
+    if not block.rows:
+        return p_id, table_id, secpr_attached
+    
+    # 열 수 계산 (최대 열 수)
+    max_cols = max(len(row) for row in block.rows)
+    row_cnt = len(block.rows)
+    
+    # 구조도 제목 먼저 출력
+    title_p = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "2",  # 소제목 스타일
+            "styleIDRef": "2",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    if not secpr_attached:
+        run_sec = ET.SubElement(title_p, _q("hp", "run"), {"charPrIDRef": RUN_CHAR_OVERRIDE_MAP[BlockType.PLAIN]})
+        _attach_secpr(run_sec)
+        secpr_attached = True
+    title_run = ET.SubElement(title_p, _q("hp", "run"), {"charPrIDRef": "7"})  # 본문 bold
+    title_t = ET.SubElement(title_run, _q("hp", "t"))
+    title_t.text = f"□ {block.diagram_title}"
+    
+    # 메인 테이블 래퍼
+    p_wrapper = ET.SubElement(
+        parent,
+        _q("hp", "p"),
+        {
+            "id": str(p_id),
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p_id += 1
+    
+    run_tbl = ET.SubElement(p_wrapper, _q("hp", "run"))
+    
+    # 셀 크기 계산 (전체 표 너비를 열 수로 균등 분배)
+    table_width = int(TABLE_WIDTH_HWP)
+    col_width = table_width // max_cols
+    
+    # BOX 셀: 헤더 1줄 + 본문 2~3줄을 위한 높이
+    box_header_height = 800   # 약 8pt
+    box_body_height = 1200    # 약 12pt (본문 줄당)
+    arrow_height = 1000       # 화살표/빈 셀 높이
+    
+    # 행 높이 계산 함수
+    def _calc_row_height(row_cells):
+        max_height = arrow_height
+        for cell in row_cells:
+            if cell.cell_type == DiagramCellType.BOX:
+                body_lines = len(cell.body_lines) if cell.body_lines else 0
+                cell_height = box_header_height + box_body_height * max(1, body_lines)
+                max_height = max(max_height, cell_height)
+        return max_height
+    
+    row_heights = [_calc_row_height(row) for row in block.rows]
+    total_height = sum(row_heights)
+    
+    tbl = ET.SubElement(
+        run_tbl,
+        _q("hp", "tbl"),
+        {
+            "id": str(table_id),
+            "zOrder": str(table_id),
+            "numberingType": "TABLE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "pageBreak": "CELL",
+            "repeatHeader": "0",
+            "rowCnt": str(row_cnt),
+            "colCnt": str(max_cols),
+            "cellSpacing": "0",
+            "borderFillIDRef": DIAGRAM_OUTER_BORDER_ID,
+            "noAdjust": "0",
+        },
+    )
+    
+    ET.SubElement(
+        tbl,
+        _q("hp", "sz"),
+        {"width": TABLE_WIDTH_HWP, "widthRelTo": "ABSOLUTE", "height": str(total_height), "heightRelTo": "ABSOLUTE", "protect": "0"},
+    )
+    ET.SubElement(
+        tbl,
+        _q("hp", "pos"),
+        {
+            "treatAsChar": "0",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "COLUMN",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    ET.SubElement(tbl, _q("hp", "outMargin"), {"left": "283", "right": "283", "top": "283", "bottom": "283"})
+    ET.SubElement(tbl, _q("hp", "inMargin"), {"left": "141", "right": "141", "top": "141", "bottom": "141"})
+    
+    p_counter = p_id
+    
+    for row_idx, row in enumerate(block.rows):
+        tr = ET.SubElement(tbl, _q("hp", "tr"))
+        row_height = row_heights[row_idx]
+        
+        # 열 수 맞추기 (부족하면 빈 셀 추가)
+        row_cells = list(row)
+        while len(row_cells) < max_cols:
+            row_cells.append(DiagramCell(
+                cell_type=DiagramCellType.EMPTY,
+                title="",
+                body_lines=[],
+                raw_text="",
+            ))
+        
+        for col_idx, cell in enumerate(row_cells):
+            # 셀 타입에 따른 borderFill 선택
+            if cell.cell_type == DiagramCellType.EMPTY:
+                border_id = DIAGRAM_EMPTY_BORDER_ID
+            elif cell.cell_type == DiagramCellType.ARROW:
+                border_id = DIAGRAM_ARROW_BORDER_ID
+            else:  # BOX
+                border_id = DIAGRAM_EMPTY_BORDER_ID  # 바깥 셀은 투명, 내부에 박스 표 삽입
+            
+            tc = ET.SubElement(
+                tr,
+                _q("hp", "tc"),
+                {
+                    "name": "",
+                    "header": "0",
+                    "hasMargin": "1",
+                    "protect": "0",
+                    "editable": "0",
+                    "dirty": "0",
+                    "borderFillIDRef": border_id,
+                },
+            )
+            
+            sub_list = ET.SubElement(
+                tc,
+                _q("hp", "subList"),
+                {
+                    "id": "",
+                    "textDirection": "HORIZONTAL",
+                    "lineWrap": "BREAK",
+                    "vertAlign": "CENTER",
+                    "linkListIDRef": "0",
+                    "linkListNextIDRef": "0",
+                    "textWidth": "0",
+                    "textHeight": "0",
+                    "hasTextRef": "0",
+                    "hasNumRef": "0",
+                },
+            )
+            
+            if cell.cell_type == DiagramCellType.BOX:
+                # BOX: 내부에 2행 표 삽입 (헤더 + 본문)
+                # 구조: <hp:p> → <hp:run> → <hp:tbl>
+                
+                # 래퍼 문단
+                wrapper_p = ET.SubElement(
+                    sub_list,
+                    _q("hp", "p"),
+                    {
+                        "id": str(p_counter),
+                        "paraPrIDRef": "0",
+                        "styleIDRef": "0",
+                        "pageBreak": "0",
+                        "columnBreak": "0",
+                        "merged": "0",
+                    },
+                )
+                p_counter += 1
+                
+                # run 래퍼 (표를 감싸기 위해 필수)
+                inner_run = ET.SubElement(wrapper_p, _q("hp", "run"))
+                
+                # 내부 표 (박스 모양)
+                inner_tbl = ET.SubElement(
+                    inner_run,
+                    _q("hp", "tbl"),
+                    {
+                        "id": str(table_id + 100 + row_idx * 10 + col_idx),
+                        "zOrder": str(table_id + 100 + row_idx * 10 + col_idx),
+                        "numberingType": "TABLE",
+                        "textWrap": "TOP_AND_BOTTOM",
+                        "textFlow": "BOTH_SIDES",
+                        "lock": "0",
+                        "dropcapstyle": "None",
+                        "pageBreak": "CELL",
+                        "repeatHeader": "0",
+                        "rowCnt": "2" if cell.body_lines else "1",
+                        "colCnt": "1",
+                        "cellSpacing": "0",
+                        "borderFillIDRef": DIAGRAM_BOX_HEADER_BORDER_ID,
+                        "noAdjust": "0",
+                    },
+                )
+                
+                inner_width = col_width - 200  # 약간의 패딩
+                inner_height = box_header_height + (box_body_height * len(cell.body_lines) if cell.body_lines else 0)
+                
+                ET.SubElement(
+                    inner_tbl,
+                    _q("hp", "sz"),
+                    {"width": str(inner_width), "widthRelTo": "ABSOLUTE", "height": str(inner_height), "heightRelTo": "ABSOLUTE", "protect": "0"},
+                )
+                ET.SubElement(
+                    inner_tbl,
+                    _q("hp", "pos"),
+                    {
+                        "treatAsChar": "1",
+                        "affectLSpacing": "0",
+                        "flowWithText": "1",
+                        "allowOverlap": "0",
+                        "holdAnchorAndSO": "0",
+                        "vertRelTo": "PARA",
+                        "horzRelTo": "COLUMN",
+                        "vertAlign": "CENTER",
+                        "horzAlign": "CENTER",
+                        "vertOffset": "0",
+                        "horzOffset": "0",
+                    },
+                )
+                ET.SubElement(inner_tbl, _q("hp", "outMargin"), {"left": "0", "right": "0", "top": "0", "bottom": "0"})
+                ET.SubElement(inner_tbl, _q("hp", "inMargin"), {"left": "141", "right": "141", "top": "71", "bottom": "71"})
+                
+                # 헤더 행 (보라색 배경)
+                inner_tr1 = ET.SubElement(inner_tbl, _q("hp", "tr"))
+                inner_tc1 = ET.SubElement(
+                    inner_tr1,
+                    _q("hp", "tc"),
+                    {
+                        "name": "",
+                        "header": "0",
+                        "hasMargin": "1",
+                        "protect": "0",
+                        "editable": "0",
+                        "dirty": "0",
+                        "borderFillIDRef": DIAGRAM_BOX_HEADER_BORDER_ID,
+                    },
+                )
+                inner_sub1 = ET.SubElement(
+                    inner_tc1,
+                    _q("hp", "subList"),
+                    {
+                        "id": "",
+                        "textDirection": "HORIZONTAL",
+                        "lineWrap": "BREAK",
+                        "vertAlign": "CENTER",
+                        "linkListIDRef": "0",
+                        "linkListNextIDRef": "0",
+                        "textWidth": "0",
+                        "textHeight": "0",
+                        "hasTextRef": "0",
+                        "hasNumRef": "0",
+                    },
+                )
+                inner_p1 = ET.SubElement(
+                    inner_sub1,
+                    _q("hp", "p"),
+                    {
+                        "id": str(p_counter),
+                        "paraPrIDRef": DIAGRAM_HEADER_PARA_ID,
+                        "styleIDRef": "0",
+                        "pageBreak": "0",
+                        "columnBreak": "0",
+                        "merged": "0",
+                    },
+                )
+                p_counter += 1
+                inner_run1 = ET.SubElement(inner_p1, _q("hp", "run"), {"charPrIDRef": "6"})  # 볼드
+                inner_t1 = ET.SubElement(inner_run1, _q("hp", "t"))
+                inner_t1.text = cell.title
+                
+                ET.SubElement(inner_tc1, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "0"})
+                ET.SubElement(inner_tc1, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+                ET.SubElement(inner_tc1, _q("hp", "cellSz"), {"width": str(inner_width), "height": str(box_header_height)})
+                ET.SubElement(inner_tc1, _q("hp", "cellMargin"), {"left": "141", "right": "141", "top": "71", "bottom": "71"})
+                
+                # 본문 행 (있으면)
+                if cell.body_lines:
+                    inner_tr2 = ET.SubElement(inner_tbl, _q("hp", "tr"))
+                    inner_tc2 = ET.SubElement(
+                        inner_tr2,
+                        _q("hp", "tc"),
+                        {
+                            "name": "",
+                            "header": "0",
+                            "hasMargin": "1",
+                            "protect": "0",
+                            "editable": "0",
+                            "dirty": "0",
+                            "borderFillIDRef": DIAGRAM_BOX_BODY_BORDER_ID,
+                        },
+                    )
+                    inner_sub2 = ET.SubElement(
+                        inner_tc2,
+                        _q("hp", "subList"),
+                        {
+                            "id": "",
+                            "textDirection": "HORIZONTAL",
+                            "lineWrap": "BREAK",
+                            "vertAlign": "CENTER",
+                            "linkListIDRef": "0",
+                            "linkListNextIDRef": "0",
+                            "textWidth": "0",
+                            "textHeight": "0",
+                            "hasTextRef": "0",
+                            "hasNumRef": "0",
+                        },
+                    )
+                    
+                    for body_line in cell.body_lines:
+                        body_p = ET.SubElement(
+                            inner_sub2,
+                            _q("hp", "p"),
+                            {
+                                "id": str(p_counter),
+                                "paraPrIDRef": DIAGRAM_BODY_PARA_ID,
+                                "styleIDRef": "0",
+                                "pageBreak": "0",
+                                "columnBreak": "0",
+                                "merged": "0",
+                            },
+                        )
+                        p_counter += 1
+                        body_run = ET.SubElement(body_p, _q("hp", "run"), {"charPrIDRef": "0"})
+                        body_t = ET.SubElement(body_run, _q("hp", "t"))
+                        body_t.text = body_line
+                    
+                    body_total_height = box_body_height * len(cell.body_lines)
+                    ET.SubElement(inner_tc2, _q("hp", "cellAddr"), {"colAddr": "0", "rowAddr": "1"})
+                    ET.SubElement(inner_tc2, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+                    ET.SubElement(inner_tc2, _q("hp", "cellSz"), {"width": str(inner_width), "height": str(body_total_height)})
+                    ET.SubElement(inner_tc2, _q("hp", "cellMargin"), {"left": "141", "right": "141", "top": "71", "bottom": "71"})
+            
+            elif cell.cell_type == DiagramCellType.ARROW:
+                # ARROW: 화살표 텍스트만 (중앙 정렬)
+                arrow_p = ET.SubElement(
+                    sub_list,
+                    _q("hp", "p"),
+                    {
+                        "id": str(p_counter),
+                        "paraPrIDRef": "0",
+                        "styleIDRef": "0",
+                        "pageBreak": "0",
+                        "columnBreak": "0",
+                        "merged": "0",
+                    },
+                )
+                p_counter += 1
+                arrow_run = ET.SubElement(arrow_p, _q("hp", "run"), {"charPrIDRef": "0"})
+                arrow_t = ET.SubElement(arrow_run, _q("hp", "t"))
+                arrow_t.text = cell.raw_text
+            
+            else:  # EMPTY
+                # 빈 셀: 공백만
+                empty_p = ET.SubElement(
+                    sub_list,
+                    _q("hp", "p"),
+                    {
+                        "id": str(p_counter),
+                        "paraPrIDRef": "0",
+                        "styleIDRef": "0",
+                        "pageBreak": "0",
+                        "columnBreak": "0",
+                        "merged": "0",
+                    },
+                )
+                p_counter += 1
+                empty_run = ET.SubElement(empty_p, _q("hp", "run"), {"charPrIDRef": "0"})
+                empty_t = ET.SubElement(empty_run, _q("hp", "t"))
+                empty_t.text = " "
+            
+            ET.SubElement(tc, _q("hp", "cellAddr"), {"colAddr": str(col_idx), "rowAddr": str(row_idx)})
+            ET.SubElement(tc, _q("hp", "cellSpan"), {"colSpan": "1", "rowSpan": "1"})
+            ET.SubElement(tc, _q("hp", "cellSz"), {"width": str(col_width), "height": str(row_height)})
+            ET.SubElement(tc, _q("hp", "cellMargin"), {"left": "141", "right": "141", "top": "141", "bottom": "141"})
+    
+    return p_counter, table_id + 1, secpr_attached
+
+
 def mm_to_hwp(mm: float) -> str:
     """Convert millimeters to Hangul internal HWPUNIT."""
 
@@ -1932,21 +2494,6 @@ def build_header_xml() -> bytes:
         {
             "version": "1.4",
             "secCnt": "1",
-            "xmlns:ha": NS["ha"],
-            "xmlns:hp": NS["hp"],
-            "xmlns:hp10": NS["hp10"],
-            "xmlns:hs": NS["hs"],
-            "xmlns:hc": NS["hc"],
-            "xmlns:hh": NS["hh"],
-            "xmlns:hhs": NS["hhs"],
-            "xmlns:hm": NS["hm"],
-            "xmlns:hpf": NS["hpf"],
-            "xmlns:dc": NS["dc"],
-            "xmlns:opf": NS["opf"],
-            "xmlns:ooxmlchart": NS["ooxmlchart"],
-            "xmlns:hwpunitchar": NS["hwpunitchar"],
-            "xmlns:epub": NS["epub"],
-            "xmlns:config": NS["config"],
         },
     )
 
@@ -2314,6 +2861,59 @@ def build_header_xml() -> bytes:
         },
     )
 
+    # ========== 구조도 전용 borderFill ==========
+    # ID 38: 투명 셀 (테두리 없음, 배경 없음) - 빈 셀용
+    add_border_fill_custom(
+        38,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("NONE", "0 mm"),
+            "bottom": ("NONE", "0 mm"),
+        },
+    )
+    # ID 39: 화살표 셀 (테두리 없음, 배경 없음)
+    add_border_fill_custom(
+        39,
+        borders={
+            "left": ("NONE", "0 mm"),
+            "right": ("NONE", "0 mm"),
+            "top": ("NONE", "0 mm"),
+            "bottom": ("NONE", "0 mm"),
+        },
+    )
+    # ID 40: 박스 헤더 (흰색 배경, SOLID 테두리) - 중앙정렬
+    add_border_fill_custom(
+        40,
+        borders={
+            "left": ("SOLID", "0.4 mm"),
+            "right": ("SOLID", "0.4 mm"),
+            "top": ("SOLID", "0.4 mm"),
+            "bottom": ("SOLID", "0.12 mm"),
+        },
+        fill_brush={"faceColor": "#FFFFFF", "hatchColor": "#999999", "alpha": "0"},
+    )
+    # ID 41: 박스 본문 (흰색 배경, SOLID 테두리)
+    add_border_fill_custom(
+        41,
+        borders={
+            "left": ("SOLID", "0.4 mm"),
+            "right": ("SOLID", "0.4 mm"),
+            "top": ("NONE", "0 mm"),
+            "bottom": ("SOLID", "0.4 mm"),
+        },
+    )
+    # ID 42: 구조도 외곽 테두리 (전체 표 감싸기)
+    add_border_fill_custom(
+        42,
+        borders={
+            "left": ("SOLID", "0.5 mm"),
+            "right": ("SOLID", "0.5 mm"),
+            "top": ("SOLID", "0.5 mm"),
+            "bottom": ("SOLID", "0.5 mm"),
+        },
+    )
+
     border_fills.set("itemCnt", str(border_fill_count))
 
     # charProperties: 글자 모양 정의 (style_textbook 기준)
@@ -2585,6 +3185,9 @@ def build_header_xml() -> bytes:
         ),  # 요약표 설명 (들여쓰기 5pt)
         (12, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 머리말
         (13, "RIGHT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 꼬리말
+        # 구조도 전용 paraPr
+        (20, "CENTER", 130, {"font_line_height": "0", "snap_to_grid": "1"}),  # 구조도 헤더: 중앙정렬
+        (21, "LEFT", 130, {"font_line_height": "0", "snap_to_grid": "1"}),    # 구조도 본문: 좌측정렬, 줄간격 130%
     ]
     for pid, align, spacing, extra in para_defs:
         add_para_pr(
@@ -2701,26 +3304,7 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
     - 본문 첫 실질 문단에는 페이지/섹션 설정을 위한 hp:secPr를 포함한다.
     """
 
-    root = ET.Element(
-        _q("hs", "sec"),
-        {
-            "xmlns:ha": NS["ha"],
-            "xmlns:hp": NS["hp"],
-            "xmlns:hp10": NS["hp10"],
-            "xmlns:hs": NS["hs"],
-            "xmlns:hc": NS["hc"],
-            "xmlns:hh": NS["hh"],
-            "xmlns:hhs": NS["hhs"],
-            "xmlns:hm": NS["hm"],
-            "xmlns:hpf": NS["hpf"],
-            "xmlns:dc": NS["dc"],
-            "xmlns:opf": NS["opf"],
-            "xmlns:ooxmlchart": NS["ooxmlchart"],
-            "xmlns:hwpunitchar": NS["hwpunitchar"],
-            "xmlns:epub": NS["epub"],
-            "xmlns:config": NS["config"],
-        },
-    )
+    root = ET.Element(_q("hs", "sec"))
 
     # 텍스트가 하나도 없으면 빈 문단 하나라도 만들어 둔다.
     text_blocks = [b for b in blocks if b.text]
@@ -2743,6 +3327,11 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
             continue
         if isinstance(block, SummaryTableBlock):
             p_id, table_id, secpr_attached = _append_summary_table(
+                root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
+            )
+            continue
+        if isinstance(block, DiagramBlock):
+            p_id, table_id, secpr_attached = _append_diagram_table(
                 root, block, table_id=table_id, p_id=p_id, secpr_attached=secpr_attached
             )
             continue
@@ -2844,23 +3433,6 @@ def build_content_hpf(doc_meta: DocumentMetadata) -> bytes:
             "version": "",
             "unique-identifier": "",
             "id": "",
-            "xmlns:ha": NS["ha"],
-            "xmlns:hp": NS["hp"],
-            "xmlns:hp10": NS["hp10"],
-            "xmlns:hs": NS["hs"],
-            "xmlns:hc": NS["hc"],
-            "xmlns:hh": NS["hh"],
-            "xmlns:hhs": NS["hhs"],
-            "xmlns:hm": NS["hm"],
-            "xmlns:hpf": NS["hpf"],
-            "xmlns:hwpunitchar": NS["hwpunitchar"],
-            "xmlns:ooxmlchart": NS["ooxmlchart"],
-            "xmlns:dc": NS["dc"],
-            "xmlns:epub": NS["epub"],
-            "xmlns:config": NS["config"],
-            "xmlns:ocf": NS["ocf"],
-            "xmlns:rdf": NS["rdf"],
-            "xmlns:pkg": NS["pkg"],
         },
     )
 
@@ -2980,7 +3552,6 @@ def build_version_xml() -> bytes:
             "appVersion": "11, 0, 0, 8808 WIN32LEWindows_10",
         },
     )
-    root.set("xmlns:hv", hv_ns)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -3012,7 +3583,6 @@ def build_manifest_xml() -> bytes:
 
     odf_ns = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
     root = ET.Element(f"{{{odf_ns}}}manifest")
-    root.set("xmlns:odf", odf_ns)
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
