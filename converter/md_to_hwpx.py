@@ -2523,6 +2523,11 @@ def build_header_xml() -> bytes:
     # - id=2: 맑은 고딕
     fontfaces = ET.SubElement(ref_list, _q("hh", "fontfaces"), {"itemCnt": "7"})
 
+    # 폰트 계열 힌트(familyType): 폰트 미설치 환경에서의 대체(substitution) 안전망.
+    # 명조(serif) 폰트를 GOTHIC으로 두면 고딕으로 잘못 대체될 수 있으므로 분기한다.
+    # 0:HY헤드라인M(고딕), 1:휴먼명조(명조), 2:맑은 고딕(고딕)
+    _FONT_FAMILY_TYPE = {0: "FCAT_GOTHIC", 1: "FCAT_MYUNGJO", 2: "FCAT_GOTHIC"}
+
     def _add_font(ff_parent, font_id: int, face: str) -> None:
         font = ET.SubElement(
             ff_parent,
@@ -2533,7 +2538,7 @@ def build_header_xml() -> bytes:
             font,
             _q("hh", "typeInfo"),
             {
-                "familyType": "FCAT_GOTHIC",
+                "familyType": _FONT_FAMILY_TYPE.get(font_id, "FCAT_GOTHIC"),
                 "weight": "5",
                 "proportion": "3",
                 "contrast": "2",
