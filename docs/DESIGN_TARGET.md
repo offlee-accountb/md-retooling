@@ -99,9 +99,13 @@ want의 charPr를 전수 분석한 결과:
 - 목표 문서의 −17~−22% 과압축은 "공격적" 스타일 → 표준 정책에선 의도적으로 따르지 않음.
 - 도구: `tools/spacing_calibration.py`(정답셋 추출), `tools/spacing_model.py`(모델+역검증).
 
-### 다음: 엔진 통합 (미착수)
-- 본문 문단 생성 시 텍스트로 자간 계산 → 0이 아니면 **전용 charPr 동적 발급**(현재 char_defs 14개 고정).
-- 2-pass 필요: ① 본문 자간 선계산·charPr 등록 → ② section 생성 시 해당 charPrIDRef 적용.
+### ✅ 엔진 통합 완료 (2026-07-02)
+- `converter/md_to_hwpx.py`에 2-pass로 통합: ① `compute_spacing_plan()`이 본문 자간 선계산 후
+  전용 charPr 발급 목록 작성 → ② `build_header_xml(spacing_char_prs)`가 charPr id 14+로 동적 등록,
+  `build_section0_xml(..., spacing_plan)`이 해당 문단 run에 적용 (인라인 볼드는 base 8 변형 charPr 별도 발급).
+- 대상: BODY/DESC2 (캘리브레이션 도메인과 동일한 휴먼명조 15pt). DESC3(맑은고딕 12pt)은 미캘리브레이션이라 제외.
+- 상수: `SPACING_*` (md_to_hwpx.py) — W=1553/N=707/S=746, WIDOW=0.5, FLOOR=−12.
+- 회귀 확인: 기존 charPr 14개·section 구조 불변, 변경은 동적 charPr 추가와 대상 문단 charPrIDRef 교체뿐.
 
 ---
 
@@ -146,7 +150,7 @@ want의 charPr를 전수 분석한 결과:
 
 - [x] want HWPX 정밀 역분석 (폰트·자간·색·여백·구조)
 - [x] 본 스펙 문서 작성
-- [ ] §5 familyType 버그 정정 + 재생성 회귀 확인
+- [x] §5 familyType 버그 정정 (`_FONT_FAMILY_TYPE` 맵 — 휴먼명조=MYUNGJO)
 - [ ] §2 제목 18pt 반영 여부 사용자 확정 후 적용
-- [ ] §4 자간 자동 조정 — spacing 단위 실측 → 휴리스틱 프로토타입 → want 캘리브레이션
-- [ ] (장기) §7 하드코딩 → YAML 단일 소스화
+- [x] §4 자간 자동 조정 — 캘리브레이션 + **엔진 통합 완료 (2026-07-02)** / 실물 한글 눈검 대기
+- [ ] (장기) §7 하드코딩 → YAML 단일 소스화 (charPr 기본값은 `CHAR_DEFS` 모듈 상수로 승격됨)

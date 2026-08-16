@@ -24,6 +24,7 @@ import argparse
 import base64
 import getpass
 import re
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -961,6 +962,194 @@ def _strip_bold_markup(text: str) -> str:
     if not text:
         return ""
     return BOLD_PATTERN.sub(lambda match: match.group(1), text)
+
+
+def _block_display_text(block: Block) -> str:
+    """실제 문서에 찍히는 텍스트 (마커/들여쓰기 prefix 포함)."""
+    if block.type == BlockType.SUBTITLE:
+        return f"□ {block.text}"
+    if block.type == BlockType.BODY:
+        return f" ◦ {block.text}"
+    if block.type == BlockType.DESC2:
+        return f"   - {block.text}"
+    if block.type == BlockType.DESC3:
+        return f"    * {block.text}"
+    if block.type == BlockType.EMPHASIS:
+        return f"◈ {block.text}"
+    return block.text
+
+
+# ---------------------------------------------------------------------------
+# Auto letter-spacing (자간 자동 조정) — docs/DESIGN_TARGET.md §4
+# ---------------------------------------------------------------------------
+# 사람이 손으로 하던 "문단이 딱 1~2줄에 떨어지도록 자간을 음수로 조이기"를 자동화.
+# 물리 모델: 줄폭 = Σ base_width[범주] + (자간%/100) × em × 글자수
+# base_width는 want 정답셋의 '자간 0' 줄 최소제곱 회귀값 (tools/spacing_model.py에서
+# 역검증 완료 — 모델이 사람의 자간 판단을 전 케이스 재현).
+
+# charPr 기본 정의 (id, height, font_id, bold) — header.xml 정적 charPr의 단일 소스.
+# 자간 동적 charPr는 이 뒤 id(=len(CHAR_DEFS))부터 발급된다.
+CHAR_DEFS: List[tuple[int, int, int, bool]] = [
+    (0, 1500, 1, False),   # 본문 휴먼명조 15pt
+    (1, 1000, 2, False),   # spacer 10pt
+    (2, 800, 2, False),    # spacer 8pt
+    (3, 600, 2, False),    # spacer 6pt
+    (4, 400, 2, False),    # spacer 4pt
+    (5, 1500, 0, True),    # 주제목 HY 15pt Bold
+    (6, 1500, 0, False),   # 소제목 HY 15pt
+    (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
+    (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
+    (9, 100, 2, False),    # 1pt filler
+    (10, 1300, 1, False),  # 머리말/꼬리말 휴먼명조 13pt
+    (11, 1100, 2, False),  # 표 본문 맑은고딕 11pt
+    (12, 1100, 2, True),   # 표 헤더 맑은고딕 11pt Bold
+    (13, 1200, 2, True),   # 표/요약표 볼드 맑은고딕 12pt
+]
+
+SPACING_EM = 1500          # 본문 휴먼명조 15pt (캘리브레이션 기준 em)
+SPACING_AVAIL = 48188      # 가용폭(HWP) = 페이지폭 − 좌우여백
+SPACING_WIDOW = 0.5        # 마지막 줄 점유율이 이 값 미만이면 압축 대상 (표준/균형 정책)
+SPACING_FLOOR = -14        # 자간 하한(%) — 사용자가 실무에서 −13까지 손수 사용(재수정2), want의
+                           # −17~−22 과압축은 따르지 않음
+SPACING_SAFETY = 1         # 최소 접기 자간에 추가하는 기본 마진(%)
+SPACING_WIDTH_SCALE = 1.005  # 글자폭 실렌더 보정계수 — 사용자 자간 손수정본(2.센터장 보고용,
+                             # 2026-07-02)의 lineseg 106개 + 경계 4케이스로 캘리브레이션
+# 정답셋 2차(재수정2) 핵심 발견: 예측 마지막 줄 점유율 0.95 초과 구간은 모델 불확실 구간 —
+# "접혔다" 예측이 실제론 한 단어 넘침(위도)일 수 있다. 따라서:
+SPACING_TARGET_RATIO = 0.94  # 접기/너지의 목표 점유율 — 이 이하로 조여야 실렌더에서 안정적
+SPACING_DANGER_RATIO = 0.95  # 이 초과로 "거의 꽉 참" 예측이면 실제 넘침 가능성 → 미세 압축(nudge)
+SPACING_NUDGE_FLOOR = -4     # 너지 전용 하한(%) — 위험구간 보정은 미세 조정에 한정
+_SPACING_W = 1553.0        # 한글/한자/전각 기본폭 (em의 104%)
+_SPACING_N = 707.0         # 영문/숫자/기호 (47%)
+_SPACING_S = 746.0         # 공백 (50%)
+
+# 조정 대상: 캘리브레이션 도메인과 동일한 휴먼명조 15pt 본문 계열만.
+# (DESC3 맑은고딕 12pt는 미캘리브레이션 → 오판 위험이 있어 제외)
+SPACING_TARGET_BLOCKS = {BlockType.BODY, BlockType.DESC2}
+
+
+def _spacing_char_width(ch: str) -> float:
+    """글자 기본폭(HWP, em=1500) — tools/spacing_calibration.classify와 동일 범주."""
+    if ch == " ":
+        return _SPACING_S
+    o = ord(ch)
+    if 0xAC00 <= o <= 0xD7A3 or 0x1100 <= o <= 0x11FF or 0x3130 <= o <= 0x318F:
+        return _SPACING_W  # 한글
+    if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF:
+        return _SPACING_W  # 한자
+    if unicodedata.east_asian_width(ch) in ("W", "F"):
+        return _SPACING_W  # 전각 기호
+    return _SPACING_N
+
+
+def _estimate_lines(text: str, spacing_pct: int) -> tuple[int, float]:
+    """어절 단위 줄바꿈 시뮬레이션으로 (줄 수, 마지막 줄 점유율) 추정.
+
+    paraPr가 breakNonLatinWord="KEEP_WORD"이므로 한글도 어절(공백 구분) 단위로
+    줄바꿈된다 — 글자 단위 누적 모델은 경계(접히기 직전) 예측이 실렌더와 어긋나서
+    어절 단위로 재설계함 (2026-07-02, 사용자 손수정본 캘리브레이션: 107/110 재현).
+    """
+
+    def char_adv(ch: str) -> float:
+        return _spacing_char_width(ch) * SPACING_WIDTH_SCALE + (spacing_pct / 100.0) * SPACING_EM
+
+    lines, cur = 1, 0.0
+    for token in re.findall(r"\S+\s*", text):
+        word = token.rstrip(" ")
+        space_width = (len(token) - len(word)) * char_adv(" ")
+        word_width = sum(char_adv(c) for c in word)
+        if cur > 0 and cur + word_width > SPACING_AVAIL:
+            if word_width > SPACING_AVAIL:
+                # 한 줄보다 긴 어절은 글자 단위로 강제 분해
+                for c in word:
+                    adv = char_adv(c)
+                    if cur + adv > SPACING_AVAIL and cur > 0:
+                        lines += 1
+                        cur = adv
+                    else:
+                        cur += adv
+                cur += space_width
+                continue
+            lines += 1
+            cur = word_width + space_width
+        else:
+            cur += word_width + space_width
+    return lines, cur / SPACING_AVAIL
+
+
+def _recommend_spacing(text: str) -> int:
+    """자간(%) 추천. 조정 불필요/하한 내 불가면 0.
+
+    두 갈래:
+    1) 위도 접기 — 마지막 줄 점유율 < WIDOW면 줄 수를 하나 줄이는 자간을 찾고,
+       예측 점유율이 TARGET_RATIO 이하가 될 때까지 추가로 조인다 (불확실 구간 회피).
+       하한 내에서 안전권에 못 들면 포기한다 (과압축+미접힘 방지).
+    2) 위험구간 너지 — 접기 대상이 아니어도 마지막 줄이 DANGER_RATIO 초과로 "거의
+       꽉 참"이면, 실제 렌더에선 한 단어가 넘쳐 있을 수 있어 안전권까지 미세 압축한다.
+    """
+    base_lines, last = _estimate_lines(text, 0)
+
+    if base_lines > 1 and last < SPACING_WIDOW:
+        for sp in range(-1, SPACING_FLOOR - 1, -1):
+            n_lines, _ = _estimate_lines(text, sp)
+            if n_lines < base_lines:
+                final = sp - SPACING_SAFETY
+                while final >= SPACING_FLOOR:
+                    f_lines, f_ratio = _estimate_lines(text, final)
+                    if f_lines < base_lines and f_ratio <= SPACING_TARGET_RATIO:
+                        return final
+                    final -= 1
+                return 0
+        return 0
+
+    if last > SPACING_DANGER_RATIO:
+        for sp in range(-1, SPACING_NUDGE_FLOOR - 1, -1):
+            f_lines, f_ratio = _estimate_lines(text, sp)
+            if f_lines < base_lines and f_ratio > SPACING_TARGET_RATIO:
+                # 조이다 접혀버렸는데 접힌 줄이 다시 위험구간이면 직전 값까지만
+                return sp + 1 if sp < -1 else 0
+            if f_ratio <= SPACING_TARGET_RATIO:
+                return sp
+        return SPACING_NUDGE_FLOOR  # 안전권 미달이어도 최대한 조여 위험을 줄인다
+    return 0
+
+
+def compute_spacing_plan(blocks: List[Block]) -> tuple[dict, list]:
+    """2-pass ①: 본문 자간 선계산 + 전용 charPr 동적 발급 목록 작성.
+
+    Returns:
+        plan: id(block) → {"spacing": int, "char": str, "bold_char": str}
+        char_prs: [(new_char_id, base_char_id, spacing_pct), ...] — header.xml 등록용
+    """
+    plan: dict[int, dict] = {}
+    registry: dict[tuple[str, int], str] = {}
+    char_prs: list[tuple[int, int, int]] = []
+    next_id = len(CHAR_DEFS)
+
+    def issue(base_char_id: str, spacing: int) -> str:
+        nonlocal next_id
+        key = (base_char_id, spacing)
+        if key not in registry:
+            registry[key] = str(next_id)
+            char_prs.append((next_id, int(base_char_id), spacing))
+            next_id += 1
+        return registry[key]
+
+    for block in blocks:
+        if block.type not in SPACING_TARGET_BLOCKS or not block.text:
+            continue
+        rendered = _strip_bold_markup(_block_display_text(block))
+        spacing = _recommend_spacing(rendered)
+        if spacing == 0:
+            continue
+        base_id = RUN_CHAR_OVERRIDE_MAP.get(block.type, "0")
+        bold_base = INLINE_BOLD_CHAR_BY_BASE_ID.get(base_id, INLINE_BOLD_CHAR_ID)
+        plan[id(block)] = {
+            "spacing": spacing,
+            "char": issue(base_id, spacing),
+            "bold_char": issue(bold_base, spacing) if BOLD_PATTERN.search(block.text) else bold_base,
+        }
+    return plan, char_prs
 
 
 def _format_block_preview_text(block: Block) -> Optional[str]:
@@ -2492,7 +2681,7 @@ def _q(prefix: str, tag: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_header_xml() -> bytes:
+def build_header_xml(spacing_char_prs: Optional[list] = None) -> bytes:
     """header.xml (head/refList) 빌더.
 
     - style_textbook에서 사용하는 글꼴/문단/스타일 정의를 포함한다.
@@ -2934,7 +3123,9 @@ def build_header_xml() -> bytes:
     # charProperties: 글자 모양 정의 (style_textbook 기준)
     char_props = ET.SubElement(ref_list, _q("hh", "charProperties"), {"itemCnt": "0"})
 
-    def add_char_pr(char_id: int, height: int, hangul_font_id: int, *, bold: bool = False) -> None:
+    def add_char_pr(
+        char_id: int, height: int, hangul_font_id: int, *, bold: bool = False, spacing: int = 0
+    ) -> None:
         char = ET.SubElement(
             char_props,
             _q("hh", "charPr"),
@@ -2975,17 +3166,18 @@ def build_header_xml() -> bytes:
                 "user": "100",
             },
         )
+        spacing_value = str(spacing)
         ET.SubElement(
             char,
             _q("hh", "spacing"),
             {
-                "hangul": "0",
-                "latin": "0",
-                "hanja": "0",
-                "japanese": "0",
-                "other": "0",
-                "symbol": "0",
-                "user": "0",
+                "hangul": spacing_value,
+                "latin": spacing_value,
+                "hanja": spacing_value,
+                "japanese": spacing_value,
+                "other": spacing_value,
+                "symbol": spacing_value,
+                "user": spacing_value,
             },
         )
         ET.SubElement(
@@ -3029,25 +3221,17 @@ def build_header_xml() -> bytes:
         if bold:
             ET.SubElement(char, _q("hh", "bold"))
 
-    char_defs = [
-        (0, 1500, 1, False),   # 본문 휴먼명조 15pt
-        (1, 1000, 2, False),   # spacer 10pt
-        (2, 800, 2, False),    # spacer 8pt
-        (3, 600, 2, False),    # spacer 6pt
-        (4, 400, 2, False),    # spacer 4pt
-        (5, 1500, 0, True),    # 주제목 HY 15pt Bold
-        (6, 1500, 0, False),   # 소제목 HY 15pt
-        (7, 1200, 2, False),   # 설명3 맑은고딕 12pt
-        (8, 1500, 1, True),    # 강조 휴먼 15pt Bold
-        (9, 100, 2, False),    # 1pt filler
-        (10, 1300, 1, False),  # 머리말/꼬리말 휴먼명조 13pt
-        (11, 1100, 2, False),  # 표 본문 맑은고딕 11pt
-        (12, 1100, 2, True),   # 표 헤더 맑은고딕 11pt Bold
-        (13, 1200, 2, True),   # 표/요약표 볼드 맑은고딕 12pt
-    ]
-    for cid, height, font_id, is_bold in char_defs:
+    for cid, height, font_id, is_bold in CHAR_DEFS:
         add_char_pr(cid, height, font_id, bold=is_bold)
-    char_props.set("itemCnt", str(len(char_defs)))
+
+    # 자간 자동조정용 동적 charPr — 기반 charPr 스펙을 복제하고 spacing만 부여
+    base_defs = {cid: (height, font_id, is_bold) for cid, height, font_id, is_bold in CHAR_DEFS}
+    dynamic_char_prs = spacing_char_prs or []
+    for new_id, base_id, spacing_pct in dynamic_char_prs:
+        height, font_id, is_bold = base_defs[base_id]
+        add_char_pr(new_id, height, font_id, bold=is_bold, spacing=spacing_pct)
+
+    char_props.set("itemCnt", str(len(CHAR_DEFS) + len(dynamic_char_prs)))
 
     # tabProperties: 3개 (참조 파일 기준)
     tab_props = ET.SubElement(ref_list, _q("hh", "tabProperties"), {"itemCnt": "3"})
@@ -3293,12 +3477,19 @@ def build_header_xml() -> bytes:
     return ET.tostring(head, encoding="utf-8", xml_declaration=True)
 
 
-def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes:
+def build_section0_xml(
+    blocks: List[Block],
+    doc_meta: DocumentMetadata,
+    spacing_plan: Optional[dict] = None,
+) -> bytes:
     """Build section0.xml with hs:sec root and content paragraphs.
 
     - 첫 부분에 머리말/꼬리말 컨트롤을 추가한다.
     - 본문 첫 실질 문단에는 페이지/섹션 설정을 위한 hp:secPr를 포함한다.
+    - spacing_plan(compute_spacing_plan 결과)이 있으면 해당 문단의 run에
+      자간 조정된 동적 charPr를 적용한다.
     """
+    spacing_plan = spacing_plan or {}
 
     root = ET.Element(_q("hs", "sec"))
 
@@ -3393,20 +3584,16 @@ def build_section0_xml(blocks: List[Block], doc_meta: DocumentMetadata) -> bytes
 
         # 실제 텍스트 run (inline bold 지원)
         char_id = RUN_CHAR_OVERRIDE_MAP.get(block.type)
-        if block.type == BlockType.SUBTITLE:
-            text_content = f"□ {block.text}"
-        elif block.type == BlockType.BODY:
-            text_content = f" ◦ {block.text}"
-        elif block.type == BlockType.DESC2:
-            text_content = f"   - {block.text}"
-        elif block.type == BlockType.DESC3:
-            text_content = f"    * {block.text}"
-        elif block.type == BlockType.EMPHASIS:
-            text_content = f"◈ {block.text}"
-        else:
-            text_content = block.text
+        text_content = _block_display_text(block)
 
-        _append_text_with_bold(p, char_id, text_content)
+        spacing_entry = spacing_plan.get(id(block))
+        if spacing_entry:
+            # 자간 자동조정: 이 문단 전용 charPr(음수 자간)로 교체
+            _append_text_with_bold_custom(
+                p, spacing_entry["char"], text_content, spacing_entry["bold_char"]
+            )
+        else:
+            _append_text_with_bold(p, char_id, text_content)
 
         p_id += 1
 
@@ -3645,9 +3832,12 @@ def write_hwpx(blocks: List[Block], output_path: Path) -> None:
 
     metadata = _build_document_metadata(blocks)
 
+    # 자간 자동조정 2-pass: ① 본문 자간 선계산·charPr 발급 → ② header/section 반영
+    spacing_plan, spacing_char_prs = compute_spacing_plan(blocks)
+
     # Build all XML files
-    header_bytes = build_header_xml()
-    section0_bytes = build_section0_xml(blocks, metadata)
+    header_bytes = build_header_xml(spacing_char_prs)
+    section0_bytes = build_section0_xml(blocks, metadata, spacing_plan)
     content_hpf_bytes = build_content_hpf(doc_meta=metadata)
     container_bytes = build_container_xml()
     container_rdf_bytes = build_container_rdf()
